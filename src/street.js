@@ -113,7 +113,7 @@ function condenser(parent, x, y, z, rotation = 0) {
 
 export function buildStreet(parent, lights) {
   const root = group(parent);
-  const ambientMotion = extendStreet(root, lights, tree, bicycle);
+  const { animate, ramenEntrance } = extendStreet(root, lights, tree, bicycle);
   box(root, -0.15, -0.152, -0.18, 8.65, 0.25, 7.88, '#a49c84', 0.055);
   const rng = random(255);
   const tiles = ['#bdb29b', '#b5ac97', '#b3a993', '#c0b79e', '#b6af9c'];
@@ -222,8 +222,8 @@ export function buildStreet(parent, lights) {
     }
   });
   return {
-    root, door,
-    anchors: { study: [1.92, 3.65, 0.41], tea: [0.94, 1.40, 1.69] },
+    root, door, ramenEntrance,
+    anchors: { study: [1.92, 3.65, 0.41], tea: [0.94, 1.40, 1.69], ramen: [9.27, 1.84, 2.34] },
     actions: [toggle(ac.node, 'Air conditioning', true, on => {
       running = on;
       ac.led.emissiveIntensity = on ? 1 : 0;
@@ -242,7 +242,7 @@ export function buildStreet(parent, lights) {
       const doorMoved = swing.step(delta, reduced);
       elapsed += delta;
       if (running && !reduced) ac.rotor.rotation.z -= delta * 13;
-      return ambientMotion(elapsed, reduced) || doorMoved;
+      return animate(elapsed, reduced) || doorMoved;
     },
   };
 }

@@ -12,12 +12,14 @@ const icons = {
   reset: '<path d="M4 11a8 8 0 1 1 2 7M4 5v6h6"/>',
   street: '<path d="m3 10 9-6 9 6v10H3Zm6 10v-6h6v6"/>',
   study: '<path d="M3 18V6m0 8h18v6m-18-2h18M7 14V9h8a4 4 0 0 1 4 4v1"/>',
+  ramen: '<path d="M3 12h18a9 9 0 0 1-18 0Zm5 8h8M7 9l11-6M10 9l9-4"/>',
   tea: '<path d="M4 9h13v3a6.5 6.5 0 0 1-13 0Zm13 1h2a2 2 0 1 1 0 4h-2M3 20h17M8 3v3m5-3v3"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 const places = {
   street: { jp: '通り', name: 'Corner Street', title: 'A little corner <br>of <em>Japan.</em>', copy: 'Follow the bike lane past the ramen shop, or find the bamboo fountain behind the houses.' },
   study: { jp: '書斎', name: 'The Study', title: 'The <em>Study.</em>', copy: 'Settle in, save a coin, or switch on the retro computer.' },
+  ramen: { jp: '食堂', name: 'Ramen Shop', title: 'The <em>Ramen Shop.</em>', copy: 'Take a seat at the counter for a bowl of ramen or a plate of sushi.' },
   tea: { jp: '茶室', name: 'The Tea Room', title: 'The <em>Tea Room.</em>', copy: 'Slide the shōji blinds open and pour a cup of tea.' },
 };
 const app = document.querySelector('#app');
@@ -37,6 +39,7 @@ app.innerHTML = `
         <div id="world"></div>
         <div class="hotspots" id="hotspots">
           <button class="hotspot" data-place="study"><span class="pin-dot"></span><span>The Study<small>UPSTAIRS</small></span>${icon('arrow')}</button>
+          <button class="hotspot" data-place="ramen"><span class="pin-dot"></span><span>Ramen Shop<small>ENTER</small></span>${icon('arrow')}</button>
           <button class="hotspot" data-place="tea"><span class="pin-dot"></span><span>Open tea room door<small>GROUND FLOOR</small></span>${icon('arrow')}</button>
         </div>
         <div id="fallback" class="fallback" hidden>3D rendering is unavailable in this browser. Open Komorebi in a WebGL 2 capable browser to explore the diorama.</div>
@@ -50,8 +53,8 @@ app.innerHTML = `
     <div class="scene-actions" id="scene-actions" hidden>
       <span class="control-label">INTERACT</span>
       <div id="action-buttons" role="group" aria-label="Scene interactions"></div>
+      <div id="action-status" class="sr-only" role="status"></div>
     </div>
-    <div id="action-status" class="sr-only" role="status"></div>
     <section class="controls" aria-label="World controls">
       <div class="places">
         <span class="control-label">EXPLORE</span>
@@ -97,6 +100,7 @@ function refreshActions() {
   world.actions().forEach((action, index) => {
     const button = container.children[index];
     button.textContent = action.label();
+    button.disabled = action.disabled?.() ?? false;
     if (!action.pressed) return;
     const pressed = action.pressed();
     const state = document.createElement('span');
@@ -108,6 +112,11 @@ function refreshActions() {
 }
 
 function interact(action) {
+  if (action === 'ramen') {
+    selectPlace('ramen');
+    document.querySelector('nav [data-place="ramen"]').focus({ preventScroll: true });
+    return;
+  }
   if (action === 'door') {
     world.enterTea(place => {
       selectPlace(place);
@@ -139,6 +148,9 @@ function selectPlace(key) {
   id('hotspots').hidden = key !== 'street' || !world;
   if (!world) return;
   world.select(key);
+  const status = id('action-status');
+  status.textContent = '';
+  status.className = key === 'ramen' ? 'meal-status' : 'sr-only';
   const row = id('scene-actions');
   const container = id('action-buttons');
   container.replaceChildren(...world.actions().map((_, index) => {

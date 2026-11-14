@@ -49,6 +49,7 @@ function house(parent, lights, { x, z, color, roof, ramen = false }) {
     cylinder(building, x, 0.46, front + 0.72, 0.19, 0.19, 0.11, '#a94f3e');
     cylinder(building, x, 0.22, front + 0.72, 0.045, 0.075, 0.43, p.dark);
   }
+  return curtain;
 }
 
 function fountain(root, lights, tree) {
@@ -112,14 +113,14 @@ export function extendStreet(root, lights, tree, bicycle) {
     signpost.position.y = 0.69;
     cylinder(root, x, 0.33, 3.38, 0.032, 0.042, 0.66, '#52544a');
   }
-  house(root, lights, { x: 8.25, z: 0.40, color: '#d5a77e', roof: '#745348', ramen: true });
+  const ramenEntrance = house(root, lights, { x: 8.25, z: 0.40, color: '#d5a77e', roof: '#745348', ramen: true });
   house(root, lights, { x: 8.73, z: -4.50, color: '#a8b3a2', roof: '#616f6e' });
   house(root, lights, { x: -2.65, z: -5.57, color: '#d5c09c', roof: '#7b6758' });
   const flow = fountain(root, lights, tree);
   for (const x of [5.25, 10.85]) planter(root, x, 0, 2.9, 0.75, 73);
   const bikes = [bicycle(root, -3, 4.08, 0, '#b26a4f', true), bicycle(root, 10.5, 4.92, Math.PI, '#609b92', true)];
   bikes.forEach(({ node }) => node.scale.setScalar(0.73));
-  return (time, reduced) => {
+  function animate(time, reduced) {
     if (reduced) return false;
     flow(time);
     bikes.forEach(({ node, wheels }, i) => {
@@ -129,5 +130,6 @@ export function extendStreet(root, lights, tree, bicycle) {
       wheels.forEach(wheel => { wheel.rotation.z = -distance / (0.395 * 0.73); });
     });
     return true;
-  };
+  }
+  return { animate, ramenEntrance };
 }

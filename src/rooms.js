@@ -2,7 +2,7 @@ import { oneShot, toggle, transition } from './animation.js';
 import * as THREE from 'three';
 import { artwork, beam, box, cylinder, framedWindow, group, lantern, mesh, palette as p, planter, random, sphere, table } from './components.js';
 
-function room(parent, { wall, trim, floor, opening = false }) {
+export function room(parent, { wall, trim, floor, opening = false }) {
   const root = group(parent);
   box(root, 0, -0.24, 0, 7.6, 0.48, 7.6, trim, 0.045);
   const rng = random(19);

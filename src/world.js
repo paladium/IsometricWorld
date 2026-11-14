@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { buildStreet } from './street.js';
 import { buildStudy, buildTea } from './rooms.js';
+import { buildRamen } from './ramen.js';
 
 const skies = [
   [0, '#222f45', '#121d31'],
@@ -18,6 +19,7 @@ const skies = [
 const tileDefinitions = {
   street: { make: buildStreet, ground: -0.854, focus: 1.57, size: 14.7, width: 23.0, x: 3.4, z: -0.9, shadow: 16 },
   study: { make: buildStudy, ground: -0.485, focus: 1.60, size: 10.1, width: 11.8, x: 0, z: 0, shadow: 9 },
+  ramen: { make: buildRamen, ground: -0.485, focus: 1.60, size: 10.1, width: 11.8, x: 0, z: 0, shadow: 9 },
   tea: { make: buildTea, ground: -0.485, focus: 1.60, size: 10.1, width: 11.8, x: 0, z: 0, shadow: 9 },
 };
 
@@ -68,8 +70,6 @@ export function createWorld(host, hotspots, onAction) {
   let gardenMix = 0, goalGarden = 0;
   let previousHour = -1;
   let dirty = true;
-  let shadowElapsed = 0;
-  let shadowPending = false;
   let motionPending = false;
   let renderElapsed = 0;
   let shadowSize;
@@ -173,11 +173,12 @@ export function createWorld(host, hotspots, onAction) {
       const y = (1 - projected.y) * 0.5 * height;
       button.hidden = gardenMix > 0.12 || anchorX < 0 || anchorX > width || y < 0 || y > height;
       if (button.hidden) continue;
-      const study = button.dataset.place === 'study';
-      const offsetX = study ? (compact ? 12 : 33) : -button.offsetWidth - (compact ? 9 : 17);
+      const place = button.dataset.place;
+      const offsetX = place === 'tea' ? -button.offsetWidth - (compact ? 9 : 17) : (compact ? 12 : 33);
+      const offsetY = place === 'ramen' && compact ? 22 : 0;
       const bottomMargin = compact ? 8 : 43;
       button.style.left = THREE.MathUtils.clamp(anchorX + offsetX, 8, width - button.offsetWidth - 8) + 'px';
-      button.style.top = THREE.MathUtils.clamp(y - button.offsetHeight / 2, 8, height - button.offsetHeight - bottomMargin) + 'px';
+      button.style.top = THREE.MathUtils.clamp(y + offsetY - button.offsetHeight / 2, 8, height - button.offsetHeight - bottomMargin) + 'px';
     }
   }
 
@@ -227,17 +228,12 @@ export function createWorld(host, hotspots, onAction) {
       moved = true;
     }
     const animated = active.update(delta, reducedMotion);
-    shadowElapsed += delta;
-    renderElapsed += delta;
     motionPending ||= animated;
-    shadowPending ||= animated;
-    if (shadowPending && shadowElapsed >= (compactLayout.matches ? 0.14 : 0.075)) {
-      renderer.shadowMap.needsUpdate = true;
-      shadowPending = false;
-      shadowElapsed = 0;
-    }
+    renderElapsed += delta;
     if (dirty || moved) updateCamera();
     if (dirty || moved || lightChanged || (motionPending && renderElapsed >= 1 / 32)) {
+      // Render moving casters and their shadow map from the same transforms.
+      if (motionPending) renderer.shadowMap.needsUpdate = true;
       renderer.render(scene, camera);
       renderElapsed = 0;
       motionPending = false;
@@ -282,10 +278,19 @@ export function createWorld(host, hotspots, onAction) {
     const bounds = canvas.getBoundingClientRect();
     hitPoint.set((event.clientX - bounds.left) / bounds.width * 2 - 1, 1 - (event.clientY - bounds.top) / bounds.height * 2);
     raycaster.setFromCamera(hitPoint, camera);
-    const hit = raycaster.intersectObject(active.root, true).find(({ object }) => object.visible);
+    const hit = raycaster.intersectObject(active.root, true).find(({ object }) => {
+      for (let node = object; node; node = node.parent) {
+        if (!node.visible) return false;
+      }
+      return true;
+    });
     for (let object = hit?.object; object && object !== active.root; object = object.parent) {
       if (object === active.door) {
         onAction('door');
+        return;
+      }
+      if (object === active.ramenEntrance) {
+        onAction('ramen');
         return;
       }
       const action = active.actions.findIndex(candidate => candidate.target === object);
@@ -317,7 +322,9 @@ export function createWorld(host, hotspots, onAction) {
     },
     enterTea(go) { active.openDoor?.(place => queueMicrotask(() => go(place))); },
     perform(index) {
-      const message = active.actions[index].run();
+      const action = active.actions[index];
+      if (action.disabled?.()) return;
+      const message = action.run();
       previousHour = -1;
       dirty = true;
       return message;
