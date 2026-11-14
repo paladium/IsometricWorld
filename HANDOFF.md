@@ -28,3 +28,7 @@ Pushes to `main` trigger [the Pages workflow](.github/workflows/pages.yml). Vite
 The production build passed. Desktop and narrow browser previews exercised room entry and interaction controls. The 360 px preview covered the full order, eat, and reorder flow for both dishes. Physical phone testing of pinch zoom and rendering performance is still open.
 
 Room interactions and the clock use in-memory state. Moving between scenes preserves that state, and reloading resets it.
+
+## Next feature
+
+The [city-builder roadmap](ROADMAP.md) records the proposed building tools, starter catalog, and options for saving and sharing cities.
