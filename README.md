@@ -8,6 +8,14 @@ Use the Interact buttons or click the objects in the scene. The tea room door sw
 
 Scrub the clock or press play to watch the shared day-night cycle. The playback multiplier runs relative to the base rate of two simulated minutes per real second. The clock continues across scene changes and wraps at midnight.
 
+## Build and share a city
+
+Choose **Build a city** to start with an empty street. Pick a catalog piece and tap an empty lot, or use a template to place an entire block. Select an existing lot to rotate, move, remove, or duplicate it. Switch to **Explore** to enter shops and homes.
+
+Use **Save draft** to reopen the layout in the same browser. **Share** provides a link to small cities. Large cities can be shared as files using **Export** and **Import**. Shared links open in Explore mode with an option to make an editable copy.
+
+Choose **10,000-building map** to try the large city. City, District, and Street change the map detail. **Rendering metrics** shows loaded chunks, draw calls, triangles, and CPU timings.
+
 ## Run locally
 
 ```sh

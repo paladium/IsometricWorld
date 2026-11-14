@@ -1,6 +1,6 @@
 # Komorebi city builder
 
-**Status** · Proposal for the next feature.
+**Status** · The first city builder and 10,000-building test map are implemented. Hosted publication and physical device performance testing are future work.
 
 Keep Corner Street as a playable example and add **Start an empty street**. Give players a road, a few open lots, and a catalog of Japanese buildings and outdoor spaces. They can place, rotate, move, and remove pieces, undo edits, and extend the street as the city grows.
 

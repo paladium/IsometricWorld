@@ -26,13 +26,16 @@ const app = document.querySelector('#app');
 app.innerHTML = `
   <header class="header">
     <div class="brand"><span class="brand-mark">${icon('mark')}</span><span>komorebi<span class="brand-jp" lang="ja">木漏れ日</span></span></div>
-    <span class="header-caption">A JAPANESE DIORAMA</span>
+    <div class="header-tools">
+      <button id="city-back" hidden>Back to city</button>
+      <button id="city-open">Build a city</button>
+    </div>
   </header>
-  <main class="experience">
+  <main class="experience" id="diorama">
     <section class="stage" aria-label="Isometric world">
       <div class="intro">
         <div class="eyebrow"><span></span><b id="place-jp" lang="ja"></b><i></i><span id="place-name"></span></div>
-        <h1 id="title"></h1>
+        <h1 id="title" tabindex="-1"></h1>
         <p id="description"></p>
       </div>
       <div class="viewport">
@@ -56,7 +59,7 @@ app.innerHTML = `
       <div id="action-status" class="sr-only" role="status"></div>
     </div>
     <section class="controls" aria-label="World controls">
-      <div class="places">
+      <div class="places" id="demo-places">
         <span class="control-label">EXPLORE</span>
         <nav aria-label="Places">
         ${Object.entries(places).map(([id, location]) => `<button data-place="${id}">${icon(id)}<span>${location.name}</span></button>`).join('')}
@@ -80,6 +83,7 @@ app.innerHTML = `
       </div>
     </section>
   </main>
+  <main class="experience" id="city-editor" hidden></main>
   <footer><span>KOMOREBI <span lang="ja">木漏れ日</span></span><span>LOCAL TIME · JST</span></footer>
 `;
 
@@ -94,6 +98,77 @@ let lastPhase;
 let lastMinute;
 let currentPlace;
 let gardenFocused = false;
+let placeInstance;
+let editor;
+let openingEditor;
+let visitingCity = false;
+let demoMinutes;
+
+function setClock(value) {
+  setPlaying(false);
+  minutes = value;
+  updateClock();
+}
+
+async function showCity() {
+  if (!openingEditor) {
+    openingEditor = import('./city/editor.js').then(module => module.createEditor(id('city-editor'), visitCityPlace));
+  }
+  try {
+    editor = await openingEditor;
+    if (visitingCity) {
+      editor.setTime(Math.floor(minutes));
+      world?.releaseInterior();
+      placeInstance = undefined;
+      currentPlace = undefined;
+    }
+    else demoMinutes = minutes;
+    visitingCity = false;
+    id('diorama').hidden = true;
+    id('city-editor').hidden = false;
+    id('city-back').hidden = true;
+    id('city-open').textContent = 'Play Corner Street';
+    editor.resume(true);
+  } catch (error) {
+    openingEditor = undefined;
+    console.error('Unable to start the city builder', error);
+    id('city-open').textContent = 'Retry city builder';
+  }
+}
+
+function visitCityPlace(key, instance, name, time) {
+  if (!world) return;
+  editor.resume(false);
+  visitingCity = true;
+  id('city-editor').hidden = true;
+  id('diorama').hidden = false;
+  id('city-back').hidden = false;
+  id('demo-places').hidden = true;
+  id('city-open').textContent = 'Play Corner Street';
+  setClock(time);
+  selectPlace(key, instance);
+  id('place-name').textContent = name;
+  id('title').focus({ preventScroll: true });
+}
+
+function showExample() {
+  editor?.resume(false);
+  visitingCity = false;
+  id('city-editor').hidden = true;
+  id('diorama').hidden = false;
+  id('city-back').hidden = true;
+  id('city-open').textContent = 'Build a city';
+  id('demo-places').hidden = false;
+  if (demoMinutes !== undefined) setClock(demoMinutes);
+  selectPlace('street');
+  if (location.hash.startsWith('#city=')) history.replaceState(null, '', location.pathname + location.search);
+}
+
+id('city-open').onclick = () => {
+  if (visitingCity || !id('city-editor').hidden) showExample();
+  else void showCity();
+};
+id('city-back').onclick = showCity;
 
 function refreshActions() {
   const container = id('action-buttons');
@@ -129,12 +204,13 @@ function interact(action) {
   if (message) id('action-status').textContent = message;
 }
 
-function selectPlace(key) {
-  if (key === currentPlace) {
+function selectPlace(key, instance) {
+  if (key === currentPlace && instance === placeInstance) {
     resetCamera();
     return;
   }
   currentPlace = key;
+  placeInstance = instance;
   gardenFocused = false;
   const place = places[key];
   document.querySelectorAll('nav [data-place]').forEach(button => {
@@ -147,7 +223,7 @@ function selectPlace(key) {
   id('description').textContent = place.copy;
   id('hotspots').hidden = key !== 'street' || !world;
   if (!world) return;
-  world.select(key);
+  world.select(key, instance);
   const status = id('action-status');
   status.textContent = '';
   status.className = key === 'ramen' ? 'meal-status' : 'sr-only';
@@ -239,11 +315,13 @@ let lastFrame = performance.now();
 function frame(now) {
   const delta = Math.min((now - lastFrame) / 1000, 0.1);
   lastFrame = now;
-  if (isPlaying) {
+  if (!id('diorama').hidden && isPlaying) {
     minutes = (minutes + delta * Number(speed.value) * 2) % 1440;
     updateClock();
   }
-  world?.render(minutes / 60, delta);
+  if (!id('diorama').hidden) world?.render(minutes / 60, delta);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+if (location.hash.startsWith('#city=')) void showCity();

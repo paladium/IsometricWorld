@@ -16,6 +16,20 @@ export function material(color) {
   return materials.get(color);
 }
 
+export function disposeModel(root) {
+  const sharedMaterials = new Set(materials.values());
+  const sharedGeometries = new Set([cube, ...spheres.values()]);
+  root.traverse(node => {
+    if (!node.isMesh) return;
+    if (!sharedGeometries.has(node.geometry)) node.geometry.dispose();
+    if (!sharedMaterials.has(node.material)) {
+      node.material.map?.dispose();
+      node.material.dispose();
+    }
+  });
+  root.removeFromParent();
+}
+
 export function group(parent, x = 0, y = 0, z = 0, rotation = 0) {
   const node = new THREE.Group();
   node.position.set(x, y, z);

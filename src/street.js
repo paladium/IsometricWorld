@@ -57,7 +57,7 @@ function tree(parent, x, z, scale, seed, colors = ['#547444', '#63834a', '#748e5
   });
 }
 
-function bicycle(parent, x, z, rotation, color = '#cb9342', rider = false) {
+export function bicycle(parent, x, z, rotation, color = '#cb9342', rider = false) {
   const node = group(parent, x, 0.017, z, rotation);
   const tire = '#363833', chrome = '#c7b994';
   const wheels = [];

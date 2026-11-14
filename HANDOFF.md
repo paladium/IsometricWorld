@@ -29,6 +29,10 @@ The production build passed. Desktop and narrow browser previews exercised room 
 
 Room interactions and the clock use in-memory state. Moving between scenes preserves that state, and reloading resets it.
 
-## Next feature
+## City builder
 
-The [city-builder roadmap](ROADMAP.md) records the proposed building tools, starter catalog, and options for saving and sharing cities.
+Open **Build a city** to place individual lots or use block templates. [src/city/model.js](src/city/model.js) owns lot IDs, spatial chunks, and undo history. [src/city/view.js](src/city/view.js) draws visible chunks, switches detail by zoom, and simulates nearby cyclists. [src/city/storage.js](src/city/storage.js) handles IndexedDB drafts, snapshot links, and city files.
+
+Custom interiors reuse the diorama's rooms and keep each building's interactive state separately while the app is open. Saved and shared snapshots preserve the layout and catalog choices. They start interior activities fresh when reopened.
+
+Desktop browser checks covered placing a ramen shop, entering it, sharing a snapshot in another tab, and editing and saving the 10,000-building map. A 360 px browser preview reopened the large draft. The [roadmap](ROADMAP.md) tracks physical phone benchmarks and hosted sharing for larger cities.

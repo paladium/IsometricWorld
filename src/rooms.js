@@ -72,7 +72,7 @@ function cushion(root, x, z, color) {
   box(root, x, 0.124, z, 0.97, 0.028, 0.87, '#887355', 0.013);
 }
 
-export function buildStudy(parent, lights) {
+export function buildStudy(parent, lights, saved = {}) {
   const root = room(parent, { wall: '#dad8b5', trim: '#afaa8e', floor: ['#8e9074', '#989a80', '#929478'] });
   rug(root, 0.57, 1.23, 3.22, 2.37, '#aeb28d', '#ddd0a6');
   const tones = ['#e2dcb2', '#d7a356', '#b5bd87', '#88976e', '#617963'];
@@ -89,7 +89,7 @@ export function buildStudy(parent, lights) {
   box(pig, 0, 0.32, 0, 0.092, 0.012, 0.021, '#664033');
   const coin = cylinder(root, pig.position.x, 4.33, pig.position.z, 0.092, 0.092, 0.031, '#efbf54', 20);
   coin.visible = false;
-  let savings = 0;
+  let savings = saved.savings ?? 0;
   const deposit = oneShot(0.72, t => {
     coin.visible = t < 1;
     coin.position.y = 3.36 + (1 - t * t) * 0.92;
@@ -143,7 +143,18 @@ export function buildStudy(parent, lights) {
   computerLight.position.set(0, 0.39, 0.50);
   pc.add(computerLight);
   planter(root, 2.46, 0.035, 1.80, 1.15, 25);
+  function power(on) {
+    screen.visible = on;
+    computerLight.visible = on;
+    glow.color.set(on ? '#c9dc70' : '#29332a');
+    glow.emissiveIntensity = on ? 0.65 : 0;
+  }
+  const lampOn = saved.lampOn ?? true;
+  const computerOn = saved.computerOn ?? true;
+  lampLight.enabled = lampOn;
+  power(computerOn);
   return {
+    state: () => ({ savings, lampOn: lampLight.enabled, computerOn: screen.visible }),
     root,
     actions: [
       { target: pig, label: () => `Save ¥100 · ¥${savings} saved`, run() {
@@ -151,13 +162,8 @@ export function buildStudy(parent, lights) {
         savings += 100;
         return `¥${savings} saved in the piggy bank.`;
       } },
-      toggle(lamp, 'Study lights', true, on => { lampLight.enabled = on; }),
-      toggle(pc, 'Computer power', true, on => {
-        screen.visible = on;
-        computerLight.visible = on;
-        glow.color.set(on ? '#c9dc70' : '#29332a');
-        glow.emissiveIntensity = on ? 0.65 : 0;
-      }),
+      toggle(lamp, 'Study lights', lampOn, on => { lampLight.enabled = on; }),
+      toggle(pc, 'Computer power', computerOn, power),
     ],
     update: (delta, reduced) => deposit.step(delta, reduced),
   };
@@ -186,7 +192,7 @@ function teaSet(root, x, y, z) {
   return { pot, spout: new THREE.Vector3(...spout), cup: cups[1] };
 }
 
-export function buildTea(parent, lights) {
+export function buildTea(parent, lights, saved = {}) {
   const root = room(parent, { wall: '#9e7457', trim: '#4d3c31', floor: ['#926044', '#9a6749', '#85553f', '#a36d4d'], opening: true });
   const paper = new THREE.MeshStandardMaterial({ color: '#e6c599', emissive: '#d9874a', emissiveIntensity: 0.12, roughness: 1 });
   lights.push({ glow: paper });
@@ -225,7 +231,8 @@ export function buildTea(parent, lights) {
   stream.visible = false;
   const tip = new THREE.Vector3();
   const direction = new THREE.Vector3();
-  let poured = false;
+  let poured = saved.poured ?? false;
+  cup.visible = poured;
   const pour = oneShot(2.1, t => {
     const lift = THREE.MathUtils.smoothstep(t, 0, 0.28) * (1 - THREE.MathUtils.smoothstep(t, 0.72, 1));
     pot.position.copy(rest);
@@ -248,10 +255,14 @@ export function buildTea(parent, lights) {
   teaSet(tray, 0.32, 0.49, 0.05);
   planter(root, 2.84, 0.037, -2.59, 0.99, 15);
   const blinds = transition(0.62, t => { screens[1].position.x = 1.25 - 1.99 * t; });
+  const blindsControl = toggle(screens[1], 'Shōji blinds', saved.blindsOpen ?? false, open => blinds.to(Number(open)));
+  blinds.to(Number(blindsControl.pressed()));
+  blinds.step(0, true);
   return {
     root,
+    state: () => ({ poured, blindsOpen: blindsControl.pressed() }),
     actions: [
-      toggle(screens[1], 'Shōji blinds', false, open => blinds.to(Number(open))),
+      blindsControl,
       { target: pot, label: () => poured ? 'Pour tea again' : 'Pour tea', run() {
         if (!pour.start()) return;
         poured = true;

@@ -187,3 +187,20 @@ footer [lang] { margin-left: 6px; letter-spacing: 0.05em; }
 @media (min-width: 751px) and (max-width: 980px) {
   nav { flex-wrap: wrap; }
 }
+
+.header-tools { display: flex; align-items: center; gap: 6px; }
+.header-tools button {
+  border: 1px solid #d9ddcd;
+  border-radius: 8px;
+  background: #e7eddb;
+  padding: 8px 11px;
+  color: #46573e;
+  font-size: 12px;
+  font-weight: 650;
+  min-height: 38px;
+}
+.controls:has(.places[hidden]) { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 560px) {
+  .header:has(#city-back:not([hidden])) .brand-jp { display: none; }
+  .header-tools button { min-height: 44px; padding-inline: 8px; }
+}

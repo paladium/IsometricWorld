@@ -44,20 +44,22 @@ function sushiPlate(parent) {
   return { dish, portions };
 }
 
-function serving(counter, x, food) {
+function serving(counter, x, food, saved = {}) {
   const tray = group(counter, x, 1.26, 0.14);
   box(tray, 0, 0.025, 0, 1.55, 0.05, 0.93, '#59392e', 0.037);
   const { dish, portions, broth } = food(tray);
   dish.position.y = 0.065;
-  dish.visible = false;
+  dish.visible = Boolean(saved.served);
   const chopsticks = group(tray, 0, 0.085, 0.34);
   for (const z of [-0.035, 0.035]) beam(chopsticks, [-0.56, 0, z], [0.56, 0, z], 0.018, '#d9b17a');
   const serve = oneShot(0.42, t => {
     dish.position.z = (1 - THREE.MathUtils.smoothstep(t, 0, 1)) * -0.48;
     dish.scale.setScalar(0.85 + t * 0.15);
   });
-  let remaining = 0;
-  let served = false;
+  let remaining = saved.remaining ?? 0;
+  let served = Boolean(saved.served);
+  portions.forEach((part, index) => { part.visible = index >= portions.length - remaining; });
+  if (broth && saved.served) setBroth(remaining / portions.length);
   let bite;
   const eat = oneShot(0.52, t => {
     const lift = Math.sin(t * Math.PI);
@@ -66,15 +68,16 @@ function serving(counter, x, food) {
     bite.visible = t < 0.8;
     chopsticks.position.y = 0.085 + lift * 0.46;
     chopsticks.rotation.z = -lift * 0.31;
-    if (broth) {
-      const amount = (remaining + (1 - t)) / portions.length;
-      broth.scale.set(0.52 + amount * 0.48, 1, 0.52 + amount * 0.48);
-      broth.position.y = 0.11 + amount * 0.16;
-      broth.visible = amount > 0;
-    }
+    if (broth) setBroth((remaining + (1 - t)) / portions.length);
   });
+  function setBroth(amount) {
+    broth.scale.set(0.52 + amount * 0.48, 1, 0.52 + amount * 0.48);
+    broth.position.y = 0.11 + amount * 0.16;
+    broth.visible = amount > 0;
+  }
   return {
     tray,
+    state: () => ({ served, remaining }),
     order() {
       eat.end();
       serve.end();
@@ -115,15 +118,15 @@ function serving(counter, x, food) {
   };
 }
 
-export function buildRamen(parent, lights) {
+export function buildRamen(parent, lights, saved = {}) {
   const root = room(parent, {
     wall: '#d1a37e', trim: '#654437', floor: ['#aa7b58', '#b3815d', '#a57353', '#b98a64'],
   });
   const counter = table(root, 0.16, 0.035, 0.1, 5.54, 1.20, 1.27, '#8d5240');
   box(counter, 0, 0.58, 0.02, 5.25, 1.10, 0.98, '#9f604a', 0.032);
   for (let i = 0; i < 17; i++) box(counter, (i - 8) * 0.30, 0.60, 0.524, 0.056, 1.08, 0.048, '#bc7857', 0.01);
-  const ramen = serving(counter, -0.92, ramenBowl);
-  const sushi = serving(counter, 0.99, sushiPlate);
+  const ramen = serving(counter, -0.92, ramenBowl, saved.ramen);
+  const sushi = serving(counter, 0.99, sushiPlate, saved.sushi);
   for (const x of [-2.04, -0.73, 0.67, 2.0]) {
     cylinder(root, x, 0.41, 1.58, 0.055, 0.107, 0.75, '#634235');
     cylinder(root, x, 0.79, 1.58, 0.36, 0.33, 0.15, '#a4483a', 22);
@@ -175,6 +178,7 @@ export function buildRamen(parent, lights) {
 
   return {
     root,
+    state: () => ({ ramen: ramen.state(), sushi: sushi.state() }),
     actions: [...menuActions(ramen, 'Ramen', 'bowl of ramen', 'Eat ramen'), ...menuActions(sushi, 'Sushi', 'plate of sushi', 'Eat sushi')],
     update(delta, reduced) {
       const ramenMoved = ramen.step(delta, reduced);

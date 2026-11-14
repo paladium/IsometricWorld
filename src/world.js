@@ -1,3 +1,4 @@
+import { disposeModel } from './components.js';
 import * as THREE from 'three';
 import { buildStreet } from './street.js';
 import { buildStudy, buildTea } from './rooms.js';
@@ -54,12 +55,36 @@ export function createWorld(host, hotspots, onAction) {
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const tiles = Object.fromEntries(Object.entries(tileDefinitions).map(([key, settings]) => {
+  function makeTile(settings, state) {
     const lamps = [];
-    const tile = { ...settings, lamps, ...settings.make(scene, lamps) };
+    const tile = { ...settings, lamps, ...settings.make(scene, lamps, state) };
     tile.root.visible = false;
-    return [key, tile];
-  }));
+    return tile;
+  }
+
+  const tiles = { street: makeTile(tileDefinitions.street) };
+  const interiorStates = new Map();
+  let cityInterior;
+  let citySession;
+  function getTile(key, instance) {
+    if (instance === undefined) return tiles[key] ??= makeTile(tileDefinitions[key]);
+    if (cityInterior?.instance === instance) return cityInterior;
+    const session = instance.split(':')[0];
+    if (citySession !== session) {
+      interiorStates.clear();
+      citySession = session;
+    }
+    cityInterior = { ...makeTile(tileDefinitions[key], interiorStates.get(instance)), instance };
+    return cityInterior;
+  }
+  function releaseInterior() {
+    if (!active?.instance) return;
+    active.leave?.();
+    if (active.instance.startsWith(citySession + ':')) interiorStates.set(active.instance, active.state());
+    disposeModel(active.root);
+    if (cityInterior === active) cityInterior = undefined;
+    active = undefined;
+  }
   host.appendChild(renderer.domElement);
   const pins = Array.from(hotspots.querySelectorAll('button'), button => ({ button, point: new THREE.Vector3(...tiles.street.anchors[button.dataset.place]) }));
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -115,14 +140,17 @@ export function createWorld(host, hotspots, onAction) {
     dirty = true;
   }
 
-  function select(key) {
-    if (tiles[key] === active) return;
+  function select(key, instance) {
+    const tile = getTile(key, instance);
+    if (tile === active) return;
+    if (active?.instance) releaseInterior();
     if (active) {
       active.leave?.();
       active.root.visible = false;
     }
-    active = tiles[key];
+    active = tile;
     active.root.visible = true;
+    active.kind = key;
     floor.position.y = active.ground;
     const range = active.shadow;
     Object.assign(sun.shadow.camera, { left: -range, right: range, top: range, bottom: -range });
@@ -189,7 +217,7 @@ export function createWorld(host, hotspots, onAction) {
     const gold = THREE.MathUtils.smoothstep(altitude, 0.03, 0.81);
     sun.position.set(active.x - Math.cos(solarAngle) * 15, 2.6 + Math.max(0, altitude) * 13, active.z + 5.5 - Math.cos(solarAngle) * 6.5);
     sun.color.copy(daylight.copy(dawn).lerp(noon, gold).lerp(night, 1 - day));
-    sun.intensity = (0.19 + 2.8 * day * (0.6 + 0.4 * gold)) * (active === tiles.tea ? 0.80 : 1);
+    sun.intensity = (0.19 + 2.8 * day * (0.6 + 0.4 * gold)) * (active.kind === 'tea' ? 0.80 : 1);
     hemisphere.color.copy(nightSky).lerp(daySky, day);
     hemisphere.intensity = 0.63 + 0.90 * day;
     fill.intensity = 0.29 + 0.25 * day;
@@ -311,7 +339,7 @@ export function createWorld(host, hotspots, onAction) {
   new ResizeObserver(resize).observe(host);
   resize();
   return {
-    select, reset, render,
+    select, reset, render, releaseInterior,
     actions: () => active.actions,
     showGarden(show) {
       reset();
