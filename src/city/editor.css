@@ -53,3 +53,73 @@
   .city-layout { gap: 8px; }
   .city-toolbar { margin-bottom: 8px; }
 }
+
+#city-palette { gap: 11px; }
+.city-palette-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.city-palette-heading > span { font-size: 12px; line-height: 1.35; color: #575d48; }
+.city-piece-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 5px;
+}
+.city-piece-grid--blocks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.city-panel .city-piece {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 66px;
+  min-width: 0;
+  padding: 5px 2px;
+  border-color: #e4ddc9;
+  background: #f6f0e2;
+  color: #414a37;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.15;
+}
+.city-panel .city-piece svg { flex: 0 0 auto; }
+.city-panel .city-piece[aria-pressed="true"] {
+  background: #e0ebd2;
+  border-color: #6d8658;
+  box-shadow: inset 0 0 0 1px #6d8658;
+}
+.city-panel .city-palette-heading .city-piece { flex-direction: row; flex-shrink: 0; min-height: 44px; padding-inline: 6px; }
+.city-palette-heading svg { width: 23px; height: 23px; }
+#city-style-control { display: grid; gap: 5px; }
+.city-placement-hint {
+  position: absolute;
+  bottom: 44px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  width: fit-content;
+  max-width: calc(100% - 20px);
+  padding: 4px 5px 4px 10px;
+  border: 1px solid #b6c6a1;
+  border-radius: 9px;
+  background: #fcfaec;
+  color: #394b33;
+  font-size: 12px;
+  font-weight: 600;
+}
+.city-placement-hint button { min-height: 29px; padding: 3px 7px; }
+.city-stage:has(.city-placement-hint:not([hidden])) canvas { cursor: crosshair; }
+@media (min-width: 561px) and (max-width: 880px) {
+  .city-piece-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .city-piece-grid--blocks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .city-placement-hint { bottom: 53px; }
+  .city-placement-hint button { min-height: 44px; }
+}
+
+@media (min-width: 881px) {
+  .city-stage { position: sticky; top: 10px; }
+  #city-pieces { display: none; }
+}

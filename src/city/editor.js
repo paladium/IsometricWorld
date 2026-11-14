@@ -2,6 +2,7 @@ import './editor.css';
 import { benchmarkCity, block, catalog, createCity, emptyStreet, variants, withinMap } from './model.js';
 import { exportCity, importCity, readDraft, readShared, saveDraft, shareLink } from './storage.js';
 import { createCityView } from './view.js';
+import { catalogButtons, paletteButton } from './palette.js';
 
 export async function createEditor(root, enter) {
   const sharedLink = location.hash.startsWith('#city=');
@@ -27,10 +28,12 @@ export async function createEditor(root, enter) {
     <div class="city-layout">
       <section class="city-stage" aria-label="City map">
         <div id="city-canvas"></div>
+        <div class="city-placement-hint" id="city-placement-hint" hidden><span></span><button id="city-cancel" type="button">Cancel</button></div>
         <div class="city-map-tools">
           <div class="city-buttons" aria-label="Map scale">
             <button data-scale="420">City</button><button data-scale="145">District</button><button data-scale="48">Street</button>
             <button id="city-in" aria-label="Zoom in">+</button><button id="city-out" aria-label="Zoom out">−</button>
+            <button id="city-pieces" type="button">Pieces</button>
           </div>
           <label class="city-time">Time <input type="range" id="city-time" min="0" max="1439" value="975"><output id="city-clock">16:15</output></label>
         </div>
@@ -58,12 +61,21 @@ export async function createEditor(root, enter) {
             <button id="city-undo" aria-label="Undo edit">Undo</button><button id="city-redo" aria-label="Redo edit">Redo</button>
           </div>
           <div id="city-palette">
-            <label for="city-asset" class="control-label">PLACE ON AN EMPTY LOT</label>
-            <select id="city-asset"></select>
-            <label for="city-style" class="control-label">ROOF STYLE</label>
-            <select id="city-style"></select>
-            <div class="city-buttons">
-              <button id="city-homes">Residential block</button><button id="city-downtown">Downtown block</button>
+            <div class="city-palette-heading">
+              <span>Pick a piece, then tap an empty lot.</span>
+              ${paletteButton('select', 'Select lots', 'data-piece="" aria-pressed="true"')}
+            </div>
+            ${catalogButtons}
+            <div id="city-style-control" hidden>
+              <label for="city-style" class="control-label">ROOF STYLE</label>
+              <select id="city-style"></select>
+            </div>
+            <div role="group" aria-label="Block templates">
+              <div class="control-label">Blocks</div>
+              <div class="city-piece-grid city-piece-grid--blocks">
+                ${paletteButton('homes', 'Residential block', 'id="city-homes" aria-pressed="false"')}
+                ${paletteButton('downtown', 'Downtown block', 'id="city-downtown" aria-pressed="false"')}
+              </div>
             </div>
           </div>
         </div>
@@ -82,10 +94,8 @@ export async function createEditor(root, enter) {
   `;
 
   const el = id => root.querySelector('#city-' + id);
-  const asset = el('asset');
+  const pieceButtons = [...root.querySelectorAll('[data-piece]')];
   const style = el('style');
-  asset.add(new Option('Select lots', ''));
-  for (const [key, item] of Object.entries(catalog)) asset.add(new Option(item.name, key));
   variants.forEach((name, index) => style.add(new Option(name, index)));
 
   let city;
@@ -93,6 +103,7 @@ export async function createEditor(root, enter) {
   let building = true;
   let selection;
   let placement;
+  let asset = '';
   let edited = false;
   let session = 0;
   let saving = false;
@@ -120,6 +131,18 @@ export async function createEditor(root, enter) {
     el('undo').disabled = !editable || !city.canUndo;
     el('redo').disabled = !editable || !city.canRedo;
     el('palette').hidden = !editable;
+    el('pieces').hidden = !editable;
+    const chosen = asset ? catalog[asset] : type;
+    el('style-control').hidden = !chosen?.roof || Boolean(placement);
+    for (const button of pieceButtons) {
+      button.setAttribute('aria-pressed', String(!placement && button.dataset.piece === asset));
+    }
+    for (const key of ['homes', 'downtown']) el(key).setAttribute('aria-pressed', String(placement?.template === key));
+    const hint = el('placement-hint');
+    hint.hidden = !editable || (!asset && !placement);
+    hint.querySelector('span').textContent = placement?.note ?? (
+      asset ? catalog[asset].name + ' · Tap an empty lot' : ''
+    );
     el('selection').textContent = type ? catalog[selected.type].name + ' · Lot ' + selected.x + ', ' + selected.z : 'Select an existing lot to inspect it.';
     el('enter').disabled = !type?.interior;
     for (const name of ['rotate', 'move', 'remove', 'duplicate']) el(name).disabled = !editable || !selected;
@@ -134,7 +157,7 @@ export async function createEditor(root, enter) {
     building = !locked;
     selection = placement = undefined;
     edited = false;
-    asset.value = '';
+    asset = '';
     style.value = '0';
     el('name').value = city.name;
     el('heading').textContent = city.name === 'Untitled city' ? 'Build a city.' : city.name;
@@ -173,9 +196,14 @@ export async function createEditor(root, enter) {
     refresh();
   }
 
+  function placementError(note) {
+    reportStatus(note);
+    el('placement-hint').querySelector('span').textContent = note;
+  }
+
   function handlePick(x, z, hit) {
     if (!withinMap(x, z)) return;
-    const placing = building && (placement || asset.value);
+    const placing = building && (placement || asset);
     const hitId = placing ? undefined : hit();
     const hitPiece = hitId && city.byId(hitId);
     if (hitPiece) ({ x, z } = hitPiece);
@@ -189,7 +217,7 @@ export async function createEditor(root, enter) {
     if (placement) {
       const targetLots = placement.pieces.map(piece => ({ x: x + piece.x, z: z + piece.z, piece }));
       if (targetLots.some(lot => !withinMap(lot.x, lot.z) || city.at(lot.x, lot.z))) {
-        reportStatus('Choose an empty area for these lots.');
+        placementError('Choose an empty area for these lots.');
         return;
       }
       if (placement.origin) {
@@ -197,6 +225,7 @@ export async function createEditor(root, enter) {
         if (origin?.id !== placement.origin.id) {
           placement = undefined;
           reportStatus('The original lot changed. Select it again.');
+          refresh();
           return;
         }
         targetLots.push({ x: origin.x, z: origin.z, piece: null });
@@ -206,14 +235,19 @@ export async function createEditor(root, enter) {
       change(targetLots, 'Placed.');
       return;
     }
+    if (target && asset && building) {
+      placementError('Lot occupied. Tap an empty lot.');
+      return;
+    }
     if (target) {
       selection = { x, z };
+      asset = '';
       style.value = String(target.variant);
       refresh();
       if (!building && catalog[target.type].interior) openInterior();
-    } else if (building && asset.value) {
+    } else if (building && asset) {
       selection = { x, z };
-      change([{ x, z, piece: { type: asset.value, rotation: 0, variant: Number(style.value) } }], catalog[asset.value].name + ' placed.');
+      change([{ x, z, piece: { type: asset, rotation: 0, variant: Number(style.value) } }], catalog[asset].name + ' placed.');
     } else {
       selection = undefined;
       refresh();
@@ -231,16 +265,18 @@ export async function createEditor(root, enter) {
     if (piece) edit(piece);
   }
 
-  function arm(pieces, note, origin) {
-    asset.value = '';
-    placement = { pieces, origin };
+  function arm(pieces, note, { origin, template } = {}) {
+    asset = '';
+    placement = { pieces, origin, template, note };
     reportStatus(note);
+    refresh();
+    revealMap();
   }
 
   function mode(value) {
     building = value;
     placement = undefined;
-    asset.value = '';
+    asset = '';
     refresh();
   }
 
@@ -250,14 +286,45 @@ export async function createEditor(root, enter) {
     view.light(minutes / 60);
   }
 
-  asset.addEventListener('change', () => {
+  function cancelPlacement() {
+    asset = '';
     placement = undefined;
-    if (asset.value) reportStatus('Tap an empty lot to place ' + catalog[asset.value].name.toLowerCase() + '.');
-    else reportStatus('Selection mode.');
+    if (selection) style.value = String(city.at(selection.x, selection.z)?.variant ?? 0);
+    reportStatus('Tap a lot to select it.');
+    refresh();
+  }
+
+  function revealMap() {
+    if (matchMedia('(max-width: 880px)').matches) el('canvas').scrollIntoView({ block: 'nearest' });
+  }
+
+  for (const button of pieceButtons) button.addEventListener('click', () => {
+    const key = button.dataset.piece;
+    if (!key || key === asset) {
+      cancelPlacement();
+      return;
+    }
+    placement = undefined;
+    asset = key;
+    reportStatus('Tap an empty lot to place ' + catalog[asset].name.toLowerCase() + '.');
+    refresh();
+    revealMap();
+  });
+  el('pieces').onclick = () => {
+    el('palette').scrollIntoView({ block: 'start' });
+    const button = pieceButtons.find(button => button.dataset.piece === asset);
+    button.focus({ preventScroll: true });
+  };
+  el('cancel').onclick = () => {
+    cancelPlacement();
+    el('canvas').querySelector('canvas').focus({ preventScroll: true });
+  };
+  root.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && (asset || placement)) cancelPlacement();
   });
   style.addEventListener('change', () => {
     const variant = Number(style.value);
-    if (building && !asset.value && !placement) selectedEdit(piece => {
+    if (building && !asset && !placement) selectedEdit(piece => {
       change([{ ...piece, piece: { ...piece, variant } }], 'Style updated.');
     });
   });
@@ -277,14 +344,14 @@ export async function createEditor(root, enter) {
   });
   el('time').oninput = () => setTime(Number(el('time').value));
   el('rotate').onclick = () => selectedEdit(piece => change([{ ...piece, piece: { ...piece, rotation: (piece.rotation + 1) % 4 } }], 'Lot rotated.'));
-  el('move').onclick = () => selectedEdit(piece => arm([{ ...piece, x: 0, z: 0 }], 'Tap an empty lot to move this piece.', piece));
+  el('move').onclick = () => selectedEdit(piece => arm([{ ...piece, x: 0, z: 0 }], 'Tap an empty lot to move this piece.', { origin: piece }));
   el('remove').onclick = () => selectedEdit(piece => {
     selection = undefined;
     placement = undefined;
     change([{ ...piece, piece: null }], 'Lot removed.');
   });
-  el('homes').onclick = () => arm(block('homes'), 'Tap the corner of an empty 4 × 5 area.');
-  el('downtown').onclick = () => arm(block('downtown'), 'Tap the corner of an empty 4 × 5 area.');
+  el('homes').onclick = () => arm(block('homes'), 'Residential block · Tap the corner of an empty 4 × 5 area', { template: 'homes' });
+  el('downtown').onclick = () => arm(block('downtown'), 'Downtown block · Tap the corner of an empty 4 × 5 area', { template: 'downtown' });
   el('duplicate').onclick = () => selectedEdit(piece => {
     const x = Math.floor(piece.x / 4) * 4;
     const z = Math.floor(piece.z / 4) * 4;
