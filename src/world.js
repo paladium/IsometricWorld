@@ -16,12 +16,12 @@ const skies = [
 ].map(([hour, center, edge]) => [hour, new THREE.Color(center), new THREE.Color(edge)]);
 
 const tileDefinitions = {
-  street: { make: buildStreet, ground: -0.854, focus: 1.53, size: 11.0 },
-  study: { make: buildStudy, ground: -0.485, focus: 1.60, size: 10.1 },
-  tea: { make: buildTea, ground: -0.485, focus: 1.60, size: 10.1 },
+  street: { make: buildStreet, ground: -0.854, focus: 1.57, size: 14.7, width: 23.0, x: 3.4, z: -0.9, shadow: 16 },
+  study: { make: buildStudy, ground: -0.485, focus: 1.60, size: 10.1, width: 11.8, x: 0, z: 0, shadow: 9 },
+  tea: { make: buildTea, ground: -0.485, focus: 1.60, size: 10.1, width: 11.8, x: 0, z: 0, shadow: 9 },
 };
 
-export function createWorld(host, hotspots) {
+export function createWorld(host, hotspots, onAction) {
   const stage = host.closest('.stage');
   const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'high-performance' });
   const compactLayout = matchMedia('(max-width: 750px)');
@@ -54,8 +54,7 @@ export function createWorld(host, hotspots) {
 
   const tiles = Object.fromEntries(Object.entries(tileDefinitions).map(([key, settings]) => {
     const lamps = [];
-    const model = settings.make(scene, lamps);
-    const tile = { ...settings, lamps, ...(key === 'street' ? model : { root: model }) };
+    const tile = { ...settings, lamps, ...settings.make(scene, lamps) };
     tile.root.visible = false;
     return [key, tile];
   }));
@@ -66,8 +65,13 @@ export function createWorld(host, hotspots) {
   let width = 1, height = 1;
   let yaw = Math.PI / 4, pitch = 0.49, zoom = 1;
   let goalYaw = yaw, goalPitch = pitch, goalZoom = zoom;
+  let gardenMix = 0, goalGarden = 0;
   let previousHour = -1;
   let dirty = true;
+  let shadowElapsed = 0;
+  let shadowPending = false;
+  let motionPending = false;
+  let renderElapsed = 0;
   let shadowSize;
   const pointers = new Map();
   const direction = new THREE.Vector3();
@@ -75,6 +79,8 @@ export function createWorld(host, hotspots) {
   const up = new THREE.Vector3();
   const center = new THREE.Vector3();
   const projected = new THREE.Vector3();
+  const raycaster = new THREE.Raycaster();
+  const hitPoint = new THREE.Vector2();
   const skyCenter = new THREE.Color();
   const skyEdge = new THREE.Color();
   const daylight = new THREE.Color();
@@ -105,20 +111,29 @@ export function createWorld(host, hotspots) {
     goalYaw = Math.PI / 4;
     goalPitch = 0.49;
     goalZoom = 1;
+    goalGarden = 0;
     dirty = true;
   }
 
   function select(key) {
     if (tiles[key] === active) return;
-    if (active) active.root.visible = false;
+    if (active) {
+      active.leave?.();
+      active.root.visible = false;
+    }
     active = tiles[key];
     active.root.visible = true;
     floor.position.y = active.ground;
+    const range = active.shadow;
+    Object.assign(sun.shadow.camera, { left: -range, right: range, top: range, bottom: -range });
+    sun.shadow.camera.updateProjectionMatrix();
+    sun.target.position.set(active.x, 0, active.z);
     previousHour = -1;
     reset();
     yaw = goalYaw;
     pitch = goalPitch;
     zoom = goalZoom;
+    gardenMix = 0;
     if (!reducedMotion) {
       host.getAnimations().forEach(animation => animation.cancel());
       host.animate([{ opacity: 0.55 }, { opacity: 1 }], { duration: 240, easing: 'ease-out' });
@@ -128,7 +143,9 @@ export function createWorld(host, hotspots) {
   function updateCamera() {
     const aspect = width / height;
     const compact = compactLayout.matches;
-    const vertical = Math.max(active.size, (compact ? (active === tiles.street ? 13.7 : 11.8) : 14.5) / aspect) / zoom;
+    const minWidth = compact ? active.width : active === tiles.street ? 26 : 14.5;
+    const overview = Math.max(active.size, minWidth / aspect);
+    const vertical = THREE.MathUtils.lerp(overview, Math.max(5.1, 7.8 / aspect), gardenMix) / zoom;
     const horizontal = vertical * aspect;
     camera.left = -horizontal / 2;
     camera.right = horizontal / 2;
@@ -138,8 +155,12 @@ export function createWorld(host, hotspots) {
     direction.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     right.set(Math.cos(yaw), 0, -Math.sin(yaw));
     up.crossVectors(direction, right);
-    center.set(0, active.focus, 0);
-    center.addScaledVector(right, compact ? 0 : -horizontal * 0.136);
+    center.set(
+      THREE.MathUtils.lerp(active.x, 4.2, gardenMix),
+      THREE.MathUtils.lerp(active.focus, 0.88, gardenMix),
+      THREE.MathUtils.lerp(active.z, -5.58, gardenMix),
+    );
+    center.addScaledVector(right, compact ? 0 : -horizontal * (active === tiles.street ? 0.10 : 0.136) * (1 - 0.25 * gardenMix));
     center.addScaledVector(up, vertical * 0.005);
     camera.position.copy(center).addScaledVector(direction, 27);
     camera.lookAt(center);
@@ -150,7 +171,7 @@ export function createWorld(host, hotspots) {
       projected.copy(point).project(camera);
       const anchorX = (projected.x + 1) * 0.5 * width;
       const y = (1 - projected.y) * 0.5 * height;
-      button.hidden = anchorX < 0 || anchorX > width || y < 0 || y > height;
+      button.hidden = gardenMix > 0.12 || anchorX < 0 || anchorX > width || y < 0 || y > height;
       if (button.hidden) continue;
       const study = button.dataset.place === 'study';
       const offsetX = study ? (compact ? 12 : 33) : -button.offsetWidth - (compact ? 9 : 17);
@@ -165,7 +186,7 @@ export function createWorld(host, hotspots) {
     const altitude = Math.sin(solarAngle);
     const day = THREE.MathUtils.smoothstep(altitude, -0.16, 0.37);
     const gold = THREE.MathUtils.smoothstep(altitude, 0.03, 0.81);
-    sun.position.set(-Math.cos(solarAngle) * 15, 2.6 + Math.max(0, altitude) * 13, 5.5 + Math.cos(solarAngle) * -6.5);
+    sun.position.set(active.x - Math.cos(solarAngle) * 15, 2.6 + Math.max(0, altitude) * 13, active.z + 5.5 - Math.cos(solarAngle) * 6.5);
     sun.color.copy(daylight.copy(dawn).lerp(noon, gold).lerp(night, 1 - day));
     sun.intensity = (0.19 + 2.8 * day * (0.6 + 0.4 * gold)) * (active === tiles.tea ? 0.80 : 1);
     hemisphere.color.copy(nightSky).lerp(daySky, day);
@@ -182,9 +203,9 @@ export function createWorld(host, hotspots) {
     stage.classList.toggle('dark-sky', hour < 5.4 || hour > 19.25);
 
     const lamplight = (1 - day) * 0.88 + 0.28;
-    for (const { light, glow, strength } of active.lamps) {
-      if (light) light.intensity = strength * lamplight;
-      glow.emissiveIntensity = lamplight * 0.73;
+    for (const { light, glow, strength, enabled = true } of active.lamps) {
+      if (light) light.intensity = enabled ? strength * lamplight : 0;
+      glow.emissiveIntensity = enabled ? lamplight * 0.73 : 0;
     }
     renderer.shadowMap.needsUpdate = true;
   }
@@ -197,15 +218,30 @@ export function createWorld(host, hotspots) {
       previousHour = hour;
     }
     let moved = false;
-    if (Math.abs(goalYaw - yaw) + Math.abs(goalPitch - pitch) + Math.abs(goalZoom - zoom) > 0.0001) {
+    if (Math.abs(goalYaw - yaw) + Math.abs(goalPitch - pitch) + Math.abs(goalZoom - zoom) + Math.abs(goalGarden - gardenMix) > 0.0001) {
       const blend = reducedMotion ? 1 : 1 - Math.exp(-delta * 13);
       yaw += (goalYaw - yaw) * blend;
       pitch += (goalPitch - pitch) * blend;
       zoom += (goalZoom - zoom) * blend;
+      gardenMix += (goalGarden - gardenMix) * blend;
       moved = true;
     }
+    const animated = active.update(delta, reducedMotion);
+    shadowElapsed += delta;
+    renderElapsed += delta;
+    motionPending ||= animated;
+    shadowPending ||= animated;
+    if (shadowPending && shadowElapsed >= (compactLayout.matches ? 0.14 : 0.075)) {
+      renderer.shadowMap.needsUpdate = true;
+      shadowPending = false;
+      shadowElapsed = 0;
+    }
     if (dirty || moved) updateCamera();
-    if (dirty || moved || lightChanged) renderer.render(scene, camera);
+    if (dirty || moved || lightChanged || (motionPending && renderElapsed >= 1 / 32)) {
+      renderer.render(scene, camera);
+      renderElapsed = 0;
+      motionPending = false;
+    }
     dirty = false;
   }
 
@@ -217,13 +253,18 @@ export function createWorld(host, hotspots) {
   canvas.addEventListener('pointerdown', event => {
     if (event.button !== 0 || pointers.size >= 2) return;
     if (pointers.size && event.pointerType !== 'touch') return;
-    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    for (const pointer of pointers.values()) pointer.travel = Infinity;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, travel: pointers.size ? Infinity : 0 });
     canvas.setPointerCapture(event.pointerId);
   });
   canvas.addEventListener('pointermove', event => {
     const previous = pointers.get(event.pointerId);
     if (!previous) return;
-    const next = { x: event.clientX, y: event.clientY };
+    const next = {
+      x: event.clientX,
+      y: event.clientY,
+      travel: previous.travel + Math.hypot(event.clientX - previous.x, event.clientY - previous.y),
+    };
     if (pointers.size === 2) {
       const other = [...pointers].find(([id]) => id !== event.pointerId)[1];
       const before = Math.hypot(other.x - previous.x, other.y - previous.y);
@@ -235,6 +276,25 @@ export function createWorld(host, hotspots) {
     }
     pointers.set(event.pointerId, next);
   });
+  canvas.addEventListener('pointerup', event => {
+    const pointer = pointers.get(event.pointerId);
+    if (!pointer || pointer.travel > 7 || !active) return;
+    const bounds = canvas.getBoundingClientRect();
+    hitPoint.set((event.clientX - bounds.left) / bounds.width * 2 - 1, 1 - (event.clientY - bounds.top) / bounds.height * 2);
+    raycaster.setFromCamera(hitPoint, camera);
+    const hit = raycaster.intersectObject(active.root, true).find(({ object }) => object.visible);
+    for (let object = hit?.object; object && object !== active.root; object = object.parent) {
+      if (object === active.door) {
+        onAction('door');
+        return;
+      }
+      const action = active.actions.findIndex(candidate => candidate.target === object);
+      if (action !== -1) {
+        onAction(action);
+        return;
+      }
+    }
+  });
   for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
     canvas.addEventListener(type, event => pointers.delete(event.pointerId));
   }
@@ -245,5 +305,22 @@ export function createWorld(host, hotspots) {
   compactLayout.addEventListener('change', resize);
   new ResizeObserver(resize).observe(host);
   resize();
-  return { select, reset, render };
+  return {
+    select, reset, render,
+    actions: () => active.actions,
+    showGarden(show) {
+      reset();
+      if (!show) return;
+      goalGarden = 1;
+      goalYaw = 2.65;
+      goalPitch = 0.81;
+    },
+    enterTea(go) { active.openDoor?.(place => queueMicrotask(() => go(place))); },
+    perform(index) {
+      const message = active.actions[index].run();
+      previousHour = -1;
+      dirty = true;
+      return message;
+    },
+  };
 }

@@ -1,3 +1,4 @@
+import { oneShot, toggle, transition } from './animation.js';
 import * as THREE from 'three';
 import { artwork, beam, box, cylinder, framedWindow, group, lantern, mesh, palette as p, planter, random, sphere, table } from './components.js';
 
@@ -85,6 +86,17 @@ export function buildStudy(parent, lights) {
     sphere(pig, 0.09, 0.29, z, 0.04, 0.07, 0.044, '#d39480');
     sphere(pig, 0.175, 0.21, z, 0.013, 0.013, 0.013, '#655447');
   }
+  box(pig, 0, 0.32, 0, 0.092, 0.012, 0.021, '#664033');
+  const coin = cylinder(root, pig.position.x, 4.33, pig.position.z, 0.092, 0.092, 0.031, '#efbf54', 20);
+  coin.visible = false;
+  let savings = 0;
+  const deposit = oneShot(0.72, t => {
+    coin.visible = t < 1;
+    coin.position.y = 3.36 + (1 - t * t) * 0.92;
+    coin.rotation.x = Math.PI / 2 * (1 - t);
+    coin.rotation.z = t * 8;
+    pig.rotation.z = t > 0.7 ? Math.sin((t - 0.7) * Math.PI / 0.3) * 0.15 : 0;
+  });
   for (let i = 0; i < 8; i++) box(root, -0.71 + i * 0.16, 3.18, -3.43, 0.13, 0.36 - i % 3 * 0.044, 0.23, ['#a2a873', '#c3a977', '#809783', '#d5c295'][i % 4], 0.015);
 
   const bed = group(root, 0.20, 0, -2.27);
@@ -102,8 +114,8 @@ export function buildStudy(parent, lights) {
   box(pc, 0, 0.37, 0.259, 0.59, 0.47, 0.038, '#667559', 0.015);
   const glow = new THREE.MeshStandardMaterial({ color: '#c9dc70', emissive: '#aabd4d', emissiveIntensity: 0.55 });
   box(pc, 0, 0.39, 0.281, 0.49, 0.34, 0.025, glow, 0.011);
-  lights.push({ glow });
-  artwork(pc, 0, 0.40, 0.297, 0.44, 0.27, ctx => {
+  glow.emissiveIntensity = 0.65;
+  const screen = artwork(pc, 0, 0.40, 0.297, 0.44, 0.27, ctx => {
     ctx.fillStyle = '#cedd80';
     ctx.fillRect(0, 0, 1, 1);
     ctx.fillStyle = '#678454';
@@ -125,33 +137,64 @@ export function buildStudy(parent, lights) {
     sphere(chair, ...end, 0.05, 0.067, 0.05, '#42483e');
   }
   const stand = table(root, 2.65, 0, -2.35, 0.80, 0.63, 0.67, '#c6bea0');
-  lantern(stand, lights, 0.06, 0.71, -0.08, 0.72, 13);
+  const lamp = lantern(stand, lights, 0.06, 0.71, -0.08, 0.72, 13);
+  const lampLight = lights.at(-1);
+  const computerLight = new THREE.PointLight('#ccd96f', 1.1, 1.7, 2);
+  computerLight.position.set(0, 0.39, 0.50);
+  pc.add(computerLight);
   planter(root, 2.46, 0.035, 1.80, 1.15, 25);
-  return root;
+  return {
+    root,
+    actions: [
+      { target: pig, label: () => `Save ¥100 · ¥${savings} saved`, run() {
+        if (!deposit.start()) return;
+        savings += 100;
+        return `¥${savings} saved in the piggy bank.`;
+      } },
+      toggle(lamp, 'Study lights', true, on => { lampLight.enabled = on; }),
+      toggle(pc, 'Computer power', true, on => {
+        screen.visible = on;
+        computerLight.visible = on;
+        glow.color.set(on ? '#c9dc70' : '#29332a');
+        glow.emissiveIntensity = on ? 0.65 : 0;
+      }),
+    ],
+    update: (delta, reduced) => deposit.step(delta, reduced),
+  };
 }
 
 function teaSet(root, x, y, z) {
   box(root, x, y + 0.022, z, 0.88, 0.055, 0.50, '#8a5139', 0.025);
   const ceramic = new THREE.MeshStandardMaterial({ color: '#a9644c', roughness: 0.42 });
-  sphere(root, x - 0.16, y + 0.16, z, 0.20, 0.115, 0.17, ceramic, 2);
-  cylinder(root, x - 0.16, y + 0.265, z, 0.106, 0.120, 0.037, ceramic);
-  sphere(root, x - 0.16, y + 0.30, z, 0.036, 0.032, 0.036, ceramic);
-  beam(root, [x - 0.30, y + 0.13, z], [x - 0.43, y + 0.25, z + 0.03], 0.038, ceramic);
-  const handle = mesh(root, new THREE.TorusGeometry(0.084, 0.018, 8, 20), ceramic, x + 0.02, y + 0.18, z);
-  handle.rotation.y = 0.2;
+  const pot = group(root, x - 0.16, y + 0.16, z);
+  sphere(pot, 0, 0, 0, 0.20, 0.115, 0.17, ceramic, 2);
+  cylinder(pot, 0, 0.105, 0, 0.106, 0.120, 0.037, ceramic);
+  sphere(pot, 0, 0.14, 0, 0.036, 0.032, 0.036, ceramic);
+  const spout = [-0.27, 0.09, 0.03];
+  beam(pot, [-0.14, -0.03, 0], spout, 0.038, ceramic);
+  mesh(pot, new THREE.TorusGeometry(0.084, 0.018, 8, 20), ceramic, 0.18, 0.02, 0);
+
+  const cups = [];
   for (const dz of [-0.14, 0.13]) {
-    cylinder(root, x + 0.26, y + 0.105, z + dz, 0.071, 0.049, 0.09, '#bd8062');
-    cylinder(root, x + 0.26, y + 0.154, z + dz, 0.056, 0.056, 0.011, '#6a563c');
+    const cup = group(root, x + 0.26, y + 0.05, z + dz);
+    cylinder(cup, 0, 0.053, 0, 0.084, 0.056, 0.09, '#bd8062');
+    cylinder(cup, 0, 0.099, 0, 0.068, 0.068, 0.013, '#654638');
+    const liquid = cylinder(cup, 0, 0.108, 0, 0.063, 0.063, 0.012, '#b5762e');
+    liquid.visible = false;
+    cups.push(liquid);
   }
+  return { pot, spout: new THREE.Vector3(...spout), cup: cups[1] };
 }
 
 export function buildTea(parent, lights) {
   const root = room(parent, { wall: '#9e7457', trim: '#4d3c31', floor: ['#926044', '#9a6749', '#85553f', '#a36d4d'], opening: true });
   const paper = new THREE.MeshStandardMaterial({ color: '#e6c599', emissive: '#d9874a', emissiveIntensity: 0.12, roughness: 1 });
   lights.push({ glow: paper });
-  for (const x of [-1.03, 1.49]) {
+  const screens = [];
+  for (const x of [-0.79, 1.25]) {
     const screen = framedWindow(root, x, 1.9, -3.58, 2.04, 3.13, { columns: 8, rows: 9, frame: '#73513c', pane: paper });
-    screen.traverse(node => { if (node.isMesh) node.castShadow = false; });
+    screen.position.z += screens.length * 0.13;
+    screens.push(screen);
   }
   box(root, 0.23, 3.51, -3.60, 4.66, 0.14, 0.27, '#714a33', 0.019);
   for (const [i, z] of [-1.30, 0.04, 1.38].entries()) {
@@ -174,10 +217,51 @@ export function buildTea(parent, lights) {
   cushion(root, 0.71, -0.46, '#849074');
   const low = table(root, 0.73, 0.08, 0.86, 2.55, 0.57, 1.21, '#805037');
   box(low, 0, 0.20, 0, 2.27, 0.075, 0.88, '#714835', 0.02);
-  teaSet(low, 0.18, 0.64, -0.10);
+  const { pot, spout, cup } = teaSet(low, 0.18, 0.64, -0.10);
+  const rest = pot.position.clone();
+  const cupTop = cup.parent.position.clone().add(cup.position);
+  const stream = cylinder(low, 0, 0, 0, 0.022, 0.022, 1, '#d4903d', 8);
+  stream.castShadow = false;
+  stream.visible = false;
+  const tip = new THREE.Vector3();
+  const direction = new THREE.Vector3();
+  let poured = false;
+  const pour = oneShot(2.1, t => {
+    const lift = THREE.MathUtils.smoothstep(t, 0, 0.28) * (1 - THREE.MathUtils.smoothstep(t, 0.72, 1));
+    pot.position.copy(rest);
+    pot.position.x += (cupTop.x + 0.28 - rest.x) * lift;
+    pot.position.y += 0.34 * lift;
+    pot.position.z += (cupTop.z - 0.03 - rest.z) * lift;
+    pot.rotation.z = lift * 0.61;
+    stream.visible = t >= 0.31 && t <= 0.71;
+    if (stream.visible) {
+      tip.copy(spout).applyEuler(pot.rotation).add(pot.position);
+      direction.copy(tip).sub(cupTop);
+      stream.position.copy(tip).lerp(cupTop, 0.5);
+      stream.scale.y = direction.length();
+      stream.quaternion.setFromUnitVectors(THREE.Object3D.DEFAULT_UP, direction.normalize());
+    }
+    cup.visible = t >= 0.50;
+  });
   const tray = table(root, 0.36, 0.04, -2.51, 2.52, 0.42, 0.79, '#82553b');
   lantern(tray, lights, -0.72, 0.49, -0.03, 0.76, 15);
   teaSet(tray, 0.32, 0.49, 0.05);
   planter(root, 2.84, 0.037, -2.59, 0.99, 15);
-  return root;
+  const blinds = transition(0.62, t => { screens[1].position.x = 1.25 - 1.99 * t; });
+  return {
+    root,
+    actions: [
+      toggle(screens[1], 'Shōji blinds', false, open => blinds.to(Number(open))),
+      { target: pot, label: () => poured ? 'Pour tea again' : 'Pour tea', run() {
+        if (!pour.start()) return;
+        poured = true;
+        return 'Pouring tea into the cup.';
+      } },
+    ],
+    update(delta, reduced) {
+      const moved = blinds.step(delta, reduced);
+      return pour.step(delta, reduced) || moved;
+    },
+    leave: () => pour.end(),
+  };
 }

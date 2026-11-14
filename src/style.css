@@ -151,3 +151,32 @@ footer [lang] { margin-left: 6px; letter-spacing: 0.05em; }
   }
   .hotspot[data-place="tea"]::before { left: auto; right: -17px; width: 16px; }
 }
+
+.scene-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 9px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffcf5;
+}
+#action-buttons { display: flex; flex-wrap: wrap; gap: 5px; }
+#action-buttons button {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid #dedfd1;
+  border-radius: 7px;
+  background: #f1efe4;
+  font-size: 12px;
+}
+#action-buttons button:hover, #action-buttons button[aria-pressed="true"] { background: #dfe8d4; color: #35472e; }
+#action-buttons button span { margin-left: 7px; font-weight: 650; }
+.scene-actions + .sr-only + .controls { margin-top: 8px; }
+.stage { height: clamp(440px, calc(100svh - 277px), 900px); }
+@media (max-width: 750px) {
+  .stage { height: auto; }
+  .scene-actions { align-items: flex-start; flex-direction: column; gap: 6px; padding: 9px 10px; }
+  #action-buttons button { min-height: 44px; }
+}

@@ -16,9 +16,9 @@ const icons = {
 };
 const icon = name => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 const places = {
-  street: { jp: '通り', name: 'Corner Street', title: 'A little corner <br>of <em>Japan.</em>', copy: 'Wander around a quiet neighborhood, step inside, and watch the light change.' },
-  study: { jp: '書斎', name: 'The Study', title: 'The <em>Study.</em>', copy: 'A sunlit upstairs retreat with a sage-green bed and a little retro computer.' },
-  tea: { jp: '茶室', name: 'The Tea Room', title: 'The <em>Tea Room.</em>', copy: 'Take a seat by the shōji screens as the lanterns warm the room.' },
+  street: { jp: '通り', name: 'Corner Street', title: 'A little corner <br>of <em>Japan.</em>', copy: 'Follow the bike lane past the ramen shop, or find the bamboo fountain behind the houses.' },
+  study: { jp: '書斎', name: 'The Study', title: 'The <em>Study.</em>', copy: 'Settle in, save a coin, or switch on the retro computer.' },
+  tea: { jp: '茶室', name: 'The Tea Room', title: 'The <em>Tea Room.</em>', copy: 'Slide the shōji blinds open and pour a cup of tea.' },
 };
 const app = document.querySelector('#app');
 app.innerHTML = `
@@ -37,7 +37,7 @@ app.innerHTML = `
         <div id="world"></div>
         <div class="hotspots" id="hotspots">
           <button class="hotspot" data-place="study"><span class="pin-dot"></span><span>The Study<small>UPSTAIRS</small></span>${icon('arrow')}</button>
-          <button class="hotspot" data-place="tea"><span class="pin-dot"></span><span>Tea Room<small>GROUND FLOOR</small></span>${icon('arrow')}</button>
+          <button class="hotspot" data-place="tea"><span class="pin-dot"></span><span>Open tea room door<small>GROUND FLOOR</small></span>${icon('arrow')}</button>
         </div>
         <div id="fallback" class="fallback" hidden>3D rendering is unavailable in this browser. Open Komorebi in a WebGL 2 capable browser to explore the diorama.</div>
       </div>
@@ -47,6 +47,11 @@ app.innerHTML = `
         <button id="reset" aria-label="Reset camera" title="Reset camera">${icon('reset')}</button>
       </div>
     </section>
+    <div class="scene-actions" id="scene-actions" hidden>
+      <span class="control-label">INTERACT</span>
+      <div id="action-buttons" role="group" aria-label="Scene interactions"></div>
+    </div>
+    <div id="action-status" class="sr-only" role="status"></div>
     <section class="controls" aria-label="World controls">
       <div class="places">
         <span class="control-label">EXPLORE</span>
@@ -84,8 +89,44 @@ let isPlaying = false;
 let world;
 let lastPhase;
 let lastMinute;
+let currentPlace;
+let gardenFocused = false;
+
+function refreshActions() {
+  const container = id('action-buttons');
+  world.actions().forEach((action, index) => {
+    const button = container.children[index];
+    button.textContent = action.label();
+    if (!action.pressed) return;
+    const pressed = action.pressed();
+    const state = document.createElement('span');
+    state.textContent = currentPlace === 'tea' ? (pressed ? 'Open' : 'Closed') : (pressed ? 'On' : 'Off');
+    state.setAttribute('aria-hidden', 'true');
+    button.append(state);
+    button.setAttribute('aria-pressed', String(pressed));
+  });
+}
+
+function interact(action) {
+  if (action === 'door') {
+    world.enterTea(place => {
+      selectPlace(place);
+      document.querySelector('nav [data-place="tea"]').focus({ preventScroll: true });
+    });
+    return;
+  }
+  const message = world.perform(action);
+  refreshActions();
+  if (message) id('action-status').textContent = message;
+}
 
 function selectPlace(key) {
+  if (key === currentPlace) {
+    resetCamera();
+    return;
+  }
+  currentPlace = key;
+  gardenFocused = false;
   const place = places[key];
   document.querySelectorAll('nav [data-place]').forEach(button => {
     if (button.dataset.place === key) button.setAttribute('aria-current', 'location');
@@ -96,7 +137,31 @@ function selectPlace(key) {
   id('title').innerHTML = place.title;
   id('description').textContent = place.copy;
   id('hotspots').hidden = key !== 'street' || !world;
-  world?.select(key);
+  if (!world) return;
+  world.select(key);
+  const row = id('scene-actions');
+  const container = id('action-buttons');
+  container.replaceChildren(...world.actions().map((_, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.addEventListener('click', () => interact(index));
+    return button;
+  }));
+  refreshActions();
+  if (key === 'street') {
+    const garden = document.createElement('button');
+    garden.type = 'button';
+    garden.id = 'garden-view';
+    garden.textContent = 'View garden';
+    garden.setAttribute('aria-pressed', 'false');
+    garden.addEventListener('click', () => {
+      gardenFocused = !gardenFocused;
+      garden.setAttribute('aria-pressed', String(gardenFocused));
+      world.showGarden(gardenFocused);
+    });
+    container.append(garden);
+  }
+  row.hidden = !container.childElementCount;
 }
 
 function updateClock() {
@@ -125,6 +190,10 @@ function setPlaying(value) {
 
 document.querySelectorAll('[data-place]').forEach(button => {
   button.addEventListener('click', () => {
+    if (button.dataset.place === 'tea' && currentPlace === 'street' && world) {
+      interact('door');
+      return;
+    }
     selectPlace(button.dataset.place);
     if (button.classList.contains('hotspot')) {
       document.querySelector(`nav [data-place="${button.dataset.place}"]`).focus();
@@ -137,9 +206,14 @@ slider.addEventListener('input', () => {
   updateClock();
 });
 play.addEventListener('click', () => setPlaying(!isPlaying));
-id('reset').addEventListener('click', () => world?.reset());
+function resetCamera() {
+  gardenFocused = false;
+  id('garden-view')?.setAttribute('aria-pressed', 'false');
+  world?.reset();
+}
+id('reset').addEventListener('click', resetCamera);
 try {
-  world = createWorld(id('world'), id('hotspots'));
+  world = createWorld(id('world'), id('hotspots'), interact);
 } catch (error) {
   console.error('Unable to start the diorama', error);
   id('fallback').hidden = false;

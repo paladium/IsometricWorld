@@ -1,5 +1,7 @@
+import { toggle, transition } from './animation.js';
+import { extendStreet } from './neighborhood.js';
 import * as THREE from 'three';
-import { beam, box, cylinder, framedWindow, group, lantern, mesh, palette as p, planter, random, sign, sphere } from './components.js';
+import { beam, box, cylinder, framedWindow, group, lantern, material, mesh, palette as p, planter, random, sign, sphere } from './components.js';
 
 function awning(parent, x, y, z, width, rotation = 0) {
   const mount = group(parent, x, y, z, rotation);
@@ -15,7 +17,9 @@ function awning(parent, x, y, z, width, rotation = 0) {
   }
 }
 
-function tree(parent, x, z, scale, seed) {
+const leafGeometry = new THREE.IcosahedronGeometry(1, 1);
+
+function tree(parent, x, z, scale, seed, colors = ['#547444', '#63834a', '#748e50', '#8da15b', '#a0ae65', '#6b8a51']) {
   const node = group(parent, x, 0.02, z);
   node.scale.setScalar(scale);
   cylinder(node, 0, 0.12, 0, 0.68, 0.57, 0.24, '#a39477', 9);
@@ -26,40 +30,66 @@ function tree(parent, x, z, scale, seed) {
   beam(node, [0.07, 1.29, -0.08], [-0.62, 2.16, 0.08], 0.095, bark);
   beam(node, [0.20, 1.72, -0.13], [0.36, 2.25, 0.53], 0.076, bark);
   const rng = random(seed);
-  const colors = ['#547444', '#63834a', '#748e50', '#8da15b', '#a0ae65', '#6b8a51'];
   const clusters = [[0.15, 2.82, -0.15, 1.03], [-0.61, 2.48, 0.11, 0.71], [0.67, 2.58, 0.22, 0.82], [0.03, 2.66, -0.68, 0.80], [0.13, 2.42, 0.63, 0.69]];
+  const transforms = colors.map(() => []);
+  const leaf = new THREE.Object3D();
   for (const [cx, cy, cz, size] of clusters) {
     sphere(node, cx, cy, cz, size, size * 0.75, size, colors[1], 2);
-    for (let i = 0; i < 33; i++) {
+    for (let i = 0; i < 19; i++) {
       const angle = rng() * Math.PI * 2;
       const v = rng() * 1.75 - 0.68;
       const r = size * Math.sqrt(Math.max(0, 1 - v * v)) * (0.77 + rng() * 0.23);
       const s = size * (0.16 + rng() * 0.22);
-      const leaf = sphere(node, cx + Math.cos(angle) * r, cy + v * size * 0.76, cz + Math.sin(angle) * r, s, s * 0.80, s, colors[Math.floor(rng() * colors.length)]);
+      leaf.position.set(cx + Math.cos(angle) * r, cy + v * size * 0.76, cz + Math.sin(angle) * r);
+      leaf.scale.set(s, s * 0.80, s);
       leaf.rotation.y = angle;
+      leaf.updateMatrix();
+      transforms[Math.floor(rng() * colors.length)].push(leaf.matrix.clone());
     }
   }
+  transforms.forEach((matrices, i) => {
+    if (!matrices.length) return;
+    const leaves = new THREE.InstancedMesh(leafGeometry, material(colors[i]), matrices.length);
+    matrices.forEach((matrix, index) => leaves.setMatrixAt(index, matrix));
+    leaves.castShadow = true;
+    leaves.receiveShadow = true;
+    node.add(leaves);
+  });
 }
 
-function bicycle(parent, x, z, rotation) {
+function bicycle(parent, x, z, rotation, color = '#cb9342', rider = false) {
   const node = group(parent, x, 0.017, z, rotation);
-  const tire = '#363833', chrome = '#c7b994', yellow = '#cb9342';
+  const tire = '#363833', chrome = '#c7b994';
+  const wheels = [];
   const left = [-0.64, 0.41, 0], right = [0.64, 0.41, 0];
   for (const center of [left, right]) {
-    mesh(node, new THREE.TorusGeometry(0.395, 0.034, 8, 30), tire, ...center);
-    mesh(node, new THREE.TorusGeometry(0.373, 0.014, 6, 30), chrome, ...center);
+    const wheel = group(node, ...center);
+    wheels.push(wheel);
+    mesh(wheel, new THREE.TorusGeometry(0.395, 0.034, 8, 30), tire, 0, 0, 0);
+    mesh(wheel, new THREE.TorusGeometry(0.373, 0.014, 6, 30), chrome, 0, 0, 0);
     for (let i = 0; i < 12; i++) {
       const a = i * Math.PI / 6;
-      beam(node, center, [center[0] + Math.sin(a) * 0.368, center[1] + Math.cos(a) * 0.368, 0], 0.006, chrome);
+      beam(wheel, [0, 0, 0], [Math.sin(a) * 0.368, Math.cos(a) * 0.368, 0], 0.006, chrome);
     }
     sphere(node, ...center, 0.039, 0.039, 0.04, chrome);
   }
   const seat = [-0.24, 0.97, 0], pedal = [-0.09, 0.41, 0], stem = [0.43, 0.91, 0];
-  for (const [a, b] of [[left, seat], [left, pedal], [seat, pedal], [seat, stem], [pedal, stem], [stem, right]]) beam(node, a, b, 0.024, yellow);
+  for (const [a, b] of [[left, seat], [left, pedal], [seat, pedal], [seat, stem], [pedal, stem], [stem, right]]) beam(node, a, b, 0.024, color);
   beam(node, stem, [0.42, 1.13, 0], 0.024, chrome);
   beam(node, [0.42, 1.13, -0.19], [0.42, 1.13, 0.19], 0.022, tire);
   box(node, -0.27, 0.995, 0, 0.22, 0.065, 0.14, tire, 0.025);
   box(node, 0.57, 0.99, 0, 0.31, 0.18, 0.37, '#887058', 0.04);
+  if (rider) {
+    beam(node, [-0.25, 1.02, 0], [-0.08, 1.49, 0], 0.13, color);
+    sphere(node, 0.01, 1.65, 0, 0.115, 0.135, 0.115, '#cc9773', 2);
+    sphere(node, -0.009, 1.72, 0, 0.13, 0.09, 0.125, '#dfc693');
+    for (const z of [-0.12, 0.12]) {
+      beam(node, [-0.07, 1.43, z * 0.8], [0.42, 1.13, z], 0.048, color);
+      beam(node, [-0.24, 1.06, z], [0.05, 0.81, z], 0.058, '#515b59');
+      beam(node, [0.05, 0.81, z], [-0.08, 0.49, z], 0.05, '#515b59');
+    }
+  }
+  return { node, wheels };
 }
 
 function condenser(parent, x, y, z, rotation = 0) {
@@ -69,12 +99,21 @@ function condenser(parent, x, y, z, rotation = 0) {
   fan.rotation.x = Math.PI / 2;
   const grille = mesh(node, new THREE.TorusGeometry(0.114, 0.011, 6, 16), '#a5a294', -0.12, 0, 0.174);
   grille.castShadow = false;
+  const rotor = group(node, -0.12, 0, 0.169);
+  for (let i = 0; i < 4; i++) {
+    const blade = group(rotor);
+    blade.rotation.z = i * Math.PI / 2;
+    box(blade, 0, 0.065, 0, 0.058, 0.116, 0.011, '#bcbba8', 0.005).rotation.z = -0.23;
+  }
+  const led = new THREE.MeshStandardMaterial({ color: '#87b875', emissive: '#83cf69', emissiveIntensity: 1 });
+  sphere(node, 0.25, 0.13, 0.161, 0.022, 0.022, 0.01, led);
   for (let i = 0; i < 5; i++) box(node, 0.19, (i - 2) * 0.043, 0.158, 0.18, 0.014, 0.017, '#888676');
+  return { node, rotor, led };
 }
 
 export function buildStreet(parent, lights) {
   const root = group(parent);
-  box(root, 0, -0.54, 0, 9.3, 0.63, 8.75, p.road, 0.047);
+  const ambientMotion = extendStreet(root, lights, tree, bicycle);
   box(root, -0.15, -0.152, -0.18, 8.65, 0.25, 7.88, '#a49c84', 0.055);
   const rng = random(255);
   const tiles = ['#bdb29b', '#b5ac97', '#b3a993', '#c0b79e', '#b6af9c'];
@@ -90,7 +129,11 @@ export function buildStreet(parent, lights) {
 
   const shop = group(root, -0.35, 0, -0.54);
   box(shop, 0, 0.15, 0, 4.35, 0.30, 3.91, '#968772', 0.045);
-  box(shop, 0, 1.40, 0, 4.21, 2.54, 3.75, '#ccbea0', 0.035);
+  box(shop, 0, 1.40, -0.47, 4.21, 2.54, 2.81, '#ccbea0', 0.035);
+  box(shop, -0.61, 1.40, 1.38, 2.99, 2.54, 0.99, '#ccbea0');
+  box(shop, 1.91, 1.40, 1.38, 0.40, 2.54, 0.99, '#ccbea0');
+  box(shop, 1.29, 2.36, 1.38, 0.82, 0.62, 0.99, '#ccbea0');
+  box(shop, 1.30, 1.14, 0.96, 0.82, 1.87, 0.04, '#4e4133');
   box(shop, 0, 3.80, 0, 4.21, 2.39, 3.75, '#e8d8b9', 0.035);
   for (const y of [2.67, 4.97]) box(shop, 0, y, 0, 4.38, 0.16, 3.93, p.trim, 0.025);
   box(shop, 0, 5.02, 0, 4.19, 0.095, 3.72, '#91928b', 0.025);
@@ -113,13 +156,15 @@ export function buildStreet(parent, lights) {
   framedWindow(shop, -0.77, 1.32, 1.899, 1.88, 1.18, { pane: windowGlow, rows: 4 });
   framedWindow(shop, 2.13, 1.33, 0.65, 1.67, 1.20, { rotation: Math.PI / 2, pane: windowGlow, rows: 8 });
   framedWindow(shop, 2.13, 1.33, -0.91, 0.74, 1.20, { rotation: Math.PI / 2, pane: windowGlow, rows: 7 });
-  condenser(shop, 2.151, 4.30, -1.46, Math.PI / 2);
-  box(shop, 1.29, 1.08, 1.95, 0.86, 1.92, 0.14, p.dark, 0.02);
-  box(shop, 1.29, 1.09, 2.032, 0.70, 1.78, 0.045, '#906c4c', 0.025);
-  box(shop, 1.29, 1.39, 2.063, 0.49, 1.04, 0.02, windowGlow);
-  for (const y of [1.05, 1.39, 1.72]) box(shop, 1.29, y, 2.094, 0.50, 0.024, 0.025, p.trim);
-  box(shop, 1.28, 0.075, 2.16, 1.12, 0.15, 0.47, '#938675', 0.026);
-  sphere(shop, 1.54, 1.01, 2.10, 0.042, 0.042, 0.042, '#dab176');
+  const ac = condenser(shop, 2.151, 4.30, -1.46, Math.PI / 2);
+  for (const x of [0.89, 1.69]) box(shop, x, 1.15, 1.95, 0.07, 1.85, 0.14, p.dark, 0.02);
+  box(shop, 1.29, 2.06, 1.95, 0.88, 0.087, 0.14, p.dark, 0.01);
+  const door = group(shop, 0.93, 0.22, 1.99);
+  box(door, 0.36, 0.90, 0, 0.72, 1.78, 0.065, '#906c4c', 0.025);
+  box(door, 0.36, 1.18, 0.04, 0.49, 1.04, 0.02, windowGlow);
+  for (const y of [0.84, 1.18, 1.51]) box(door, 0.36, y, 0.059, 0.50, 0.024, 0.025, p.trim);
+  sphere(door, 0.61, 0.80, 0.07, 0.042, 0.042, 0.042, '#dab176');
+  box(shop, 1.28, 0.11, 2.16, 1.12, 0.22, 0.47, '#938675', 0.026);
   sign(shop, 1.28, 2.29, 2.008, 0.95, 0.29, '喫茶 木漏れ日', '#885345', '#f2dfb5');
   awning(shop, -0.78, 2.57, 1.97, 2.47);
   awning(shop, 2.16, 2.57, 0.0, 3.48, Math.PI / 2);
@@ -165,5 +210,39 @@ export function buildStreet(parent, lights) {
     const z = -1.80 + (rng() - 0.5) * 2.1;
     box(root, x, 0.011, z, 0.038 + rng() * 0.046, 0.012, 0.032, i % 2 ? '#9a824d' : '#7d8757').rotation.y = rng() * 6;
   }
-  return { root, anchors: { study: [2.32, 3.58, 0.60], tea: [0.92, 1.33, 1.87] } };
+  let running = true;
+  let elapsed = 0;
+  let enter;
+  const swing = transition(0.56, t => {
+    door.rotation.y = -t * 1.28;
+    if (t === 1 && enter) {
+      const go = enter;
+      enter = undefined;
+      go('tea');
+    }
+  });
+  return {
+    root, door,
+    anchors: { study: [1.92, 3.65, 0.41], tea: [0.94, 1.40, 1.69] },
+    actions: [toggle(ac.node, 'Air conditioning', true, on => {
+      running = on;
+      ac.led.emissiveIntensity = on ? 1 : 0;
+      ac.led.color.set(on ? '#87b875' : '#4f5646');
+    })],
+    openDoor(go) {
+      enter = go;
+      swing.to(1);
+    },
+    leave() {
+      enter = undefined;
+      swing.to(0);
+      swing.step(0, true);
+    },
+    update(delta, reduced) {
+      const doorMoved = swing.step(delta, reduced);
+      elapsed += delta;
+      if (running && !reduced) ac.rotor.rotation.z -= delta * 13;
+      return ambientMotion(elapsed, reduced) || doorMoved;
+    },
+  };
 }
