@@ -16,6 +16,12 @@ Use **Save draft** to reopen the layout in the same browser. **Share** provides 
 
 Choose **10,000-building map** to try the large city. City, District, and Street change the map detail. **Rendering metrics** shows loaded chunks, draw calls, triangles, and CPU timings.
 
+## Walk through a city
+
+Choose **Walk Lantern Lane** for a ready-made dusk route, or choose **Walk** in your own city. Tap a street, park, or storefront to walk there. **Nearby stops** offers destinations you can choose from the controls. Connect each storefront's front to a street, bike path, or park, and rotate the building where needed.
+
+Sit at a bench, buy green tea from a vending machine with the walk's ¥300 allowance, or enter a shop and use **Back to city** to return to its doorway. Street lanterns light up as the city clock moves toward night. Use **Share** during a walk to include its starting lot and time in the link.
+
 ## Run locally
 
 ```sh

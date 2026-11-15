@@ -2,6 +2,7 @@ import './editor.css';
 import { benchmarkCity, block, catalog, createCity, emptyStreet, variants, withinMap } from './model.js';
 import { exportCity, importCity, readDraft, readShared, saveDraft, shareLink } from './storage.js';
 import { createCityView } from './view.js';
+import { approach, doorway, duskBlock, isWalkable, walkRoute } from './walk.js';
 import { catalogButtons, paletteButton } from './palette.js';
 
 export async function createEditor(root, enter) {
@@ -21,6 +22,7 @@ export async function createEditor(root, enter) {
       <div><div class="control-label">CITY BUILDER</div><h1 id="city-heading">Build a city.</h1></div>
       <div class="city-toolbar-buttons">
         <button id="city-new">Empty street</button>
+        <button id="city-dusk">Walk Lantern Lane</button>
         <button id="city-benchmark">10,000-building map</button>
         <button id="city-load">Open draft</button>
       </div>
@@ -37,6 +39,15 @@ export async function createEditor(root, enter) {
           </div>
           <label class="city-time">Time <input type="range" id="city-time" min="0" max="1439" value="975"><output id="city-clock">16:15</output></label>
         </div>
+        <section class="city-walk-controls" id="city-walk-controls" aria-label="Walking controls" hidden>
+          <p id="city-walk-status" role="status"></p>
+          <div class="city-buttons">
+            <button id="city-walk-action" hidden></button>
+            <button id="city-walk-stops" aria-expanded="false" aria-controls="city-nearby">Nearby stops</button>
+            <button id="city-walk-exit">End walk</button>
+          </div>
+          <div class="city-buttons" id="city-nearby" hidden></div>
+        </section>
         <div class="city-map-caption"><span>Drag to pan · Pinch or scroll to zoom</span><span id="city-count"></span></div>
       </section>
       <aside class="city-panel" aria-label="City controls">
@@ -57,6 +68,7 @@ export async function createEditor(root, enter) {
         <div class="city-panel-section">
           <div class="city-buttons">
             <button id="city-build" aria-pressed="true">Build</button><button id="city-explore" aria-pressed="false">Explore</button>
+            <button id="city-walk" aria-pressed="false">Walk</button>
             <button id="city-copy-draft" hidden>Make an editable copy</button>
             <button id="city-undo" aria-label="Undo edit">Undo</button><button id="city-redo" aria-label="Redo edit">Redo</button>
           </div>
@@ -107,8 +119,15 @@ export async function createEditor(root, enter) {
   let edited = false;
   let session = 0;
   let saving = false;
+  let walker;
+  let arriving = false;
+  let stop;
+  let sitting = false;
+  let coins = 3;
   const reportStatus = note => { el('status').textContent = note; };
-  const view = createCityView(el('canvas'), handlePick, updateScale);
+  const view = createCityView(el('canvas'), handlePick, updateScale, (dx, dz) => {
+    if (walker) goTo(city.at(walker.x + dx, walker.z + dz));
+  });
 
   function updateScale(span) {
     root.querySelectorAll('[data-scale]').forEach(button => {
@@ -125,7 +144,9 @@ export async function createEditor(root, enter) {
     el('name').readOnly = locked;
     el('build').disabled = locked;
     el('build').setAttribute('aria-pressed', String(editable));
-    el('explore').setAttribute('aria-pressed', String(!building));
+    el('explore').setAttribute('aria-pressed', String(!building && !walker));
+    el('walk').setAttribute('aria-pressed', String(Boolean(walker)));
+    el('walk-controls').hidden = !walker;
     el('copy-draft').hidden = !locked;
     el('save').disabled = locked || saving;
     el('undo').disabled = !editable || !city.canUndo;
@@ -144,13 +165,14 @@ export async function createEditor(root, enter) {
       asset ? catalog[asset].name + ' · Tap an empty lot' : ''
     );
     el('selection').textContent = type ? catalog[selected.type].name + ' · Lot ' + selected.x + ', ' + selected.z : 'Select an existing lot to inspect it.';
-    el('enter').disabled = !type?.interior;
+    el('enter').disabled = !type?.interior || Boolean(walker);
     for (const name of ['rotate', 'move', 'remove', 'duplicate']) el(name).disabled = !editable || !selected;
-    view.select(selection);
+    view.select(walker ? undefined : selection);
     view.refresh();
   }
 
   function setCity(data, { readOnly = false, overview = false } = {}) {
+    endWalk();
     city = createCity(data);
     session++;
     locked = readOnly;
@@ -208,6 +230,10 @@ export async function createEditor(root, enter) {
     const hitPiece = hitId && city.byId(hitId);
     if (hitPiece) ({ x, z } = hitPiece);
     const target = city.at(x, z);
+    if (walker) {
+      goTo(target);
+      return;
+    }
     if (view.span >= 240) {
       view.focus({ x, z }, 145);
       selection = target;
@@ -254,8 +280,149 @@ export async function createEditor(root, enter) {
     }
   }
 
+  function walkStatus(note) {
+    el('walk-status').textContent = note;
+  }
+
+  function endWalk() {
+    if (!walker) return;
+    walker = stop = undefined;
+    arriving = sitting = false;
+    el('nearby').hidden = true;
+    el('walk-stops').setAttribute('aria-expanded', 'false');
+    view.stopWalk();
+  }
+
+  function startWalk(preferred) {
+    if (walker) {
+      centerWalker();
+      return;
+    }
+    const selected = selection && city.at(selection.x, selection.z);
+    const start = preferred && city.at(preferred.x, preferred.z);
+    const initial = isWalkable(start) ? start : (selected && approach(city, selected)) ?? city.at(0, 0);
+    if (isWalkable(initial)) walker = initial;
+    else {
+      for (const piece of city.cells.values()) {
+        if (!isWalkable(piece)) continue;
+        walker = piece;
+        break;
+      }
+    }
+    if (!walker) {
+      reportStatus('Place a street, bike path, or park to start walking.');
+      return;
+    }
+    building = false;
+    asset = '';
+    placement = undefined;
+    coins = 3;
+    view.startWalk(walker);
+    walkStatus('Tap a street or storefront to walk there.');
+    updateWalkControls();
+    refresh();
+    revealMap();
+  }
+
+  function centerWalker() {
+    view.centerWalker();
+    revealMap();
+  }
+
+  function updateWalkControls() {
+    const action = el('walk-action');
+    const type = stop?.type;
+    if (stop && catalog[type].interior) action.textContent = 'Enter ' + catalog[type].name.toLowerCase();
+    else if (type === 'bench') action.textContent = sitting ? 'Stand up' : 'Sit on bench';
+    else if (type === 'vending') action.textContent = coins ? `Buy green tea · ¥100 (¥${coins * 100} left)` : 'Wallet empty';
+    else action.textContent = '';
+    action.hidden = !action.textContent;
+    action.disabled = arriving || (type === 'vending' && !coins);
+    el('walk-stops').disabled = arriving;
+    if (!el('nearby').hidden) updateNearby();
+  }
+
+  function updateNearby() {
+    const entries = [];
+    for (let dx = -7; dx <= 7; dx++) for (let dz = -7; dz <= 7; dz++) {
+      const piece = city.at(walker.x + dx, walker.z + dz);
+      if (!piece) continue;
+      const item = catalog[piece.type];
+      if (!item.interior && !['bench', 'vending', 'garden', 'fountain', 'trees', 'plaza'].includes(piece.type)) continue;
+      if (approach(city, piece)) entries.push({ piece, distance: Math.abs(dx) + Math.abs(dz) });
+    }
+    entries.sort((a, b) => a.distance - b.distance);
+    const buttons = entries.slice(0, 8).map(({ piece }) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = catalog[piece.type].name;
+      button.title = `Lot ${piece.x}, ${piece.z}`;
+      button.disabled = arriving;
+      button.onclick = () => {
+        el('nearby').hidden = true;
+        el('walk-stops').setAttribute('aria-expanded', 'false');
+        goTo(piece);
+      };
+      return button;
+    });
+    el('nearby').replaceChildren(...(buttons.length ? buttons : ['No stops nearby. Follow a connected street.']));
+  }
+
+  function goTo(piece) {
+    if (arriving) return;
+    if (!piece) {
+      walkStatus('Tap a street, park, or storefront.');
+      return;
+    }
+    if (stop?.id === piece.id) {
+      useStop();
+      return;
+    }
+    const destination = approach(city, piece);
+    const path = destination && walkRoute(city, walker, destination);
+    if (!path) {
+      walkStatus('There’s no connected path to that lot. Check that a street or path reaches its front.');
+      return;
+    }
+    const kind = catalog[piece.type].kind;
+    const isStop = kind !== 'route' && piece.type !== 'lantern';
+    // A walker who just visited a lot is standing off the route at its entrance.
+    if (stop && !isWalkable(stop)) path.unshift({ x: walker.x, z: walker.z });
+    if (!isWalkable(piece)) path.push(doorway(piece));
+    arriving = true;
+    sitting = false;
+    stop = undefined;
+    walkStatus('Walking to ' + catalog[piece.type].name.toLowerCase() + '…');
+    updateWalkControls();
+    view.walk(path, () => {
+      if (!walker || !arriving) return;
+      walker = destination;
+      arriving = false;
+      stop = isStop ? piece : undefined;
+      selection = piece;
+      walkStatus(stop ? catalog[piece.type].name : 'Tap another street or storefront to keep walking.');
+      updateWalkControls();
+      if (stop && catalog[stop.type].interior) el('walk-action').focus({ preventScroll: true });
+    });
+  }
+
+  function useStop() {
+    if (arriving || !stop) return;
+    if (catalog[stop.type].interior) openInterior();
+    else if (stop.type === 'bench') {
+      sitting = !sitting;
+      view.rest(sitting, stop);
+      walkStatus(sitting ? 'Resting on the bench.' : 'Ready to walk.');
+    } else if (stop.type === 'vending' && coins) {
+      coins--;
+      view.holdDrink();
+      walkStatus('You bought a green tea for ¥100.');
+    }
+    updateWalkControls();
+  }
+
   function openInterior() {
-    const piece = selection && city.at(selection.x, selection.z);
+    const piece = walker ? stop : selection && city.at(selection.x, selection.z);
     if (!piece || !catalog[piece.type].interior) return;
     enter(catalog[piece.type].interior, `${session}:${piece.id}`, catalog[piece.type].name, Number(el('time').value));
   }
@@ -274,6 +441,7 @@ export async function createEditor(root, enter) {
   }
 
   function mode(value) {
+    endWalk();
     building = value;
     placement = undefined;
     asset = '';
@@ -335,6 +503,23 @@ export async function createEditor(root, enter) {
     history.replaceState(null, '', location.pathname + location.search);
     edited = true;
     reportStatus('Editable copy created. Save it as a draft when ready.');
+  };
+  el('walk').onclick = () => startWalk();
+  el('walk-action').onclick = useStop;
+  el('walk-exit').onclick = () => {
+    mode(false);
+    el('walk').focus({ preventScroll: true });
+  };
+  el('walk-stops').onclick = () => {
+    const list = el('nearby');
+    list.hidden = !list.hidden;
+    el('walk-stops').setAttribute('aria-expanded', String(!list.hidden));
+    if (!list.hidden) updateNearby();
+  };
+  el('dusk').onclick = () => {
+    if (!replaceCity(duskBlock())) return;
+    setTime(18 * 60 + 40);
+    startWalk({ x: -4, z: 0 });
   };
   el('enter').onclick = openInterior;
   el('in').onclick = () => view.zoom(view.span / 1.4);
@@ -416,7 +601,8 @@ export async function createEditor(root, enter) {
     const revision = city.revision;
     const name = city.name;
     try {
-      const url = await shareLink(city);
+      const walk = walker && { x: walker.x, z: walker.z, time: Number(el('time').value) };
+      const url = await shareLink(city, walk);
       if (city !== sharing || city.revision !== revision || city.name !== name) return;
       if (!url) {
         reportStatus('This city is too large for a link. Export the city file to share it.');
@@ -426,7 +612,7 @@ export async function createEditor(root, enter) {
       el('share-box').hidden = false;
       el('link').focus();
       el('link').select();
-      reportStatus('This link opens a snapshot in Explore mode.');
+      reportStatus(walk ? 'This link opens your city in Walk mode.' : 'This link opens a snapshot in Explore mode.');
     } catch {
       reportStatus('A share link could not be created. Export the city file to share it.');
     }
@@ -462,11 +648,15 @@ export async function createEditor(root, enter) {
     el('metrics').textContent = `${chunks} chunks · ${calls} draw calls · ${triangles.toLocaleString()} triangles · ${loadMs.toFixed(1)} ms last chunk update · ${frameMs.toFixed(1)} ms render submit`;
   }, 500);
   setCity(shared || restored || emptyStreet(), { readOnly: Boolean(shared), overview: (shared || restored)?.pieces.length > 2000 });
-  setTime(975);
+  setTime(shared?.walkStart?.time ?? 975);
+  if (shared?.walkStart) startWalk(shared.walkStart);
   if (warning) reportStatus(sharedLink ? 'This city link could not be opened.' : 'The saved draft could not be read.');
   else if (shared) reportStatus('Shared city. Explore it or make your own editable copy.');
   return {
-    resume(active) { view.resume(active); },
+    resume(active) {
+      view.resume(active);
+      if (active && walker) centerWalker();
+    },
     time: () => Number(el('time').value),
     setTime,
   };

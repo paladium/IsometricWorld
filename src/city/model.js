@@ -12,6 +12,9 @@ export const catalog = {
   garden: { name: 'Pocket garden', kind: 'park', color: '#adad7e' },
   fountain: { name: 'Bamboo fountain', kind: 'park', color: '#a1aa78' },
   trees: { name: 'Cherry grove', kind: 'park', color: '#a0a875' },
+  bench: { name: 'Bench', kind: 'fixture', color: '#a17d5a' },
+  vending: { name: 'Vending machine', kind: 'fixture', color: '#a95546' },
+  lantern: { name: 'Street lantern', kind: 'fixture', color: '#ab895d' },
   plaza: { name: 'Stone plaza', kind: 'park', color: '#c9bea6' },
 };
 

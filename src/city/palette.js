@@ -14,6 +14,9 @@ const art = {
   plaza: '<path fill="#c9b8a0" d="m16 6 13 8v6l-13 8-13-8v-6z"/><path fill="#e1d4bf" d="m3 14 13-8 13 8-13 8z"/><path d="m10 10 13 8m-13 0 13-8m-7 12v6"/>',
   road: '<path fill="#828880" d="M4 22 22 5l6 6L10 28z"/><path stroke="#fff0c0" d="m9 23 3-3m3-3 3-3m3-3 3-3"/>',
   bike: '<path fill="#a4bea5" d="M3 9h26v15H3z"/><circle fill="none" cx="10" cy="19" r="3.5"/><circle fill="none" cx="22" cy="19" r="3.5"/><path d="m10 19 4-7 4 7h-8m8 0 2-7 2 7m-3-7h3m-10 0h3"/>',
+  bench: '<path fill="#b68c61" d="M5 10h22v8H5zm-2 9h26v4H3z"/><path d="M7 23v5m18-5v5"/>',
+  vending: '<rect fill="#b95749" x="7" y="4" width="18" height="24" rx="2"/><path fill="#fff0c8" d="M10 7h12v10H10z"/><path d="M11 22h7m2-3h2"/>',
+  lantern: '<path fill="#9e7854" d="m9 12 7-6 7 6zM14 21h4v7h-4z"/><path fill="#fbd186" d="M11 12h10v9H11z"/><path d="M16 12v9"/>',
   homes: '<path fill="#dcb895" d="M5 17h10v10H5zm12-5h10v15H17z"/><path fill="#6f8d7b" d="m3 18 7-7 7 7zm12-5 7-7 7 7z"/><path d="M9 22v5m13-10v3"/>',
   downtown: '<path fill="#a4b39f" d="M4 15h9v12H4z"/><path fill="#91aeb8" d="M13 5h9v22h-9z"/><path fill="#c59478" d="M22 12h6v15h-6z"/><path stroke="#f7e2ae" d="M16 10h3m-3 5h3m-3 5h3M7 19h3m-3 4h3"/>',
 };
@@ -26,6 +29,7 @@ const groups = [
   ['Buildings', ['house', 'machiya', 'ramen', 'tea', 'apartment', 'skyscraper']],
   ['Outdoors', ['garden', 'fountain', 'trees', 'plaza']],
   ['Routes', ['road', 'bike']],
+  ['Street details', ['bench', 'vending', 'lantern']],
 ];
 
 export const catalogButtons = groups.map(([label, keys]) => `

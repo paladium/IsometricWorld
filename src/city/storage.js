@@ -45,7 +45,10 @@ export function parseSnapshot(data) {
     ids.add(id);
     return { id, x, z, type, rotation, variant };
   });
-  return { name: data.name, pieces };
+  const walk = data.walk;
+  const walkStart = walk && withinMap(walk.x, walk.z) && Number.isInteger(walk.time) &&
+    walk.time >= 0 && walk.time < 1440 ? walk : undefined;
+  return { name: data.name, pieces, walkStart };
 }
 
 let savedCity;
@@ -94,9 +97,9 @@ export async function readDraft() {
   return parseSnapshot({ ...manifest, pieces: chunks.flatMap(chunk => JSON.parse(chunk)) });
 }
 
-export async function shareLink(city) {
+export async function shareLink(city, walk) {
   if (city.cells.size > 2000) return null;
-  const stream = new Blob([JSON.stringify(snapshot(city))]).stream().pipeThrough(new CompressionStream('deflate'));
+  const stream = new Blob([JSON.stringify({ ...snapshot(city), walk })]).stream().pipeThrough(new CompressionStream('deflate'));
   const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
   if (bytes.length > maxLink) return null;
   const url = new URL(location.href);

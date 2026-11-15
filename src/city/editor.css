@@ -123,3 +123,22 @@
   .city-stage { position: sticky; top: 10px; }
   #city-pieces { display: none; }
 }
+
+.city-walk-controls {
+  position: absolute;
+  inset: auto 10px 44px;
+  width: fit-content;
+  max-width: calc(100% - 20px);
+  padding: 7px 9px;
+  border: 1px solid #b6c6a1;
+  border-radius: 9px;
+  background: #fcfaec;
+  color: #394b33;
+  font-size: 12px;
+}
+.city-walk-controls p { margin: 0 0 5px; line-height: 1.35; }
+#city-nearby { margin-top: 6px; max-height: 115px; overflow: auto; }
+.city-walk-controls button:disabled { opacity: 0.55; cursor: default; }
+@media (max-width: 560px) {
+  .city-walk-controls { bottom: 54px; }
+}

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { box, sphere, group } from '../components.js';
 import { bicycle } from '../street.js';
 import { catalog, cellKey, chunkKey, chunkSize, directions, limit } from './model.js';
 
@@ -10,6 +11,7 @@ const geometries = {
   round: new THREE.CylinderGeometry(0.5, 0.5, 1, 12),
 };
 const material = new THREE.MeshStandardMaterial({ roughness: 0.87 });
+const lanternMaterial = new THREE.MeshStandardMaterial({ roughness: 0.57, emissive: '#ffac44' });
 const roofColors = [null, '#526478', '#aa5f49', '#648774'];
 
 function drawPiece(piece, detail, add, city) {
@@ -39,6 +41,23 @@ function drawPiece(piece, detail, add, city) {
 
   const roof = roofColors[variant] ?? style.roof ?? '#738769';
   part(style.kind === 'park' ? style.color : '#b7ab92', 0, 0.055, 0, 3.82, 0.11, 3.82);
+  if (style.kind === 'fixture') {
+    if (type === 'bench') {
+      part(style.color, 0, 0.48, 0, 1.48, 0.12, 0.52);
+      part(style.color, 0, 0.73, -0.22, 1.48, 0.29, 0.09);
+      for (const x of [-0.55, 0.55]) part('#554c3e', x, 0.30, 0, 0.09, 0.32, 0.4);
+    } else if (type === 'vending') {
+      part(style.color, 0, 0.91, 0, 0.95, 1.6, 0.62);
+      part('#eddfb1', 0, 1.16, 0.32, 0.72, 0.58, 0.06, 'glow');
+      for (const x of [-0.22, 0, 0.22]) part('#738e79', x, 1.13, 0.36, 0.11, 0.26, 0.025);
+      part('#503e35', 0, 0.48, 0.32, 0.48, 0.13, 0.045);
+    } else {
+      part('#655444', 0, 0.78, 0, 0.12, 1.35, 0.12);
+      part('#ffe2a0', 0, 1.61, 0, 0.42, 0.4, 0.42, 'glow');
+      part(style.color, 0, 1.85, 0, 0.56, 0.12, 0.56);
+    }
+    return;
+  }
   if (style.kind === 'park') {
     if (type === 'plaza') {
       for (const offset of [-1.08, 0, 1.08]) part('#e3d7ba', offset, 0.114, 0, 0.92, 0.025, 3.45);
@@ -85,7 +104,7 @@ function drawPiece(piece, detail, add, city) {
   }
 }
 
-export function createCityView(host, onPick, onZoom) {
+export function createCityView(host, onPick, onZoom, onStep) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.07;
@@ -128,6 +147,50 @@ export function createCityView(host, onPick, onZoom) {
   const projectionView = new THREE.Matrix4();
   const bounds = new THREE.Box3();
   const traffic = [];
+  const avatar = group(scene);
+  avatar.visible = false;
+  const body = group(avatar);
+  const legs = [-0.12, 0.12].map(x => {
+    const leg = group(body, x, 0.32);
+    box(leg, 0, -0.12, 0, 0.14, 0.27, 0.14, '#555b65');
+    return leg;
+  });
+  box(body, 0, 0.51, 0, 0.38, 0.42, 0.27, '#bc6558', 0.04);
+  box(body, 0, 0.50, -0.19, 0.29, 0.30, 0.12, '#ead2a1', 0.03);
+  sphere(body, 0, 0.86, 0, 0.19, 0.21, 0.18, '#edbd8e', 2);
+  sphere(body, 0, 0.96, -0.02, 0.195, 0.13, 0.182, '#4f4038', 2);
+  for (const x of [-0.055, 0.055]) sphere(body, x, 0.87, 0.17, 0.018, 0.019, 0.015, '#4f4038');
+  const drink = box(body, 0.27, 0.56, 0.14, 0.10, 0.17, 0.10, '#85ad7f', 0.02);
+  drink.visible = false;
+  const walkTarget = new THREE.Vector3();
+  let route = [];
+  let onArrival;
+  let stride = 0;
+
+  function updateWalker(delta) {
+    if (!avatar.visible || !route.length) return;
+    if (reducedMotion && route.length > 1) route = route.slice(-1);
+    const step = route[0];
+    walkTarget.set(step.x * cellSize, step.y ?? 0.12, step.z * cellSize);
+    const distance = avatar.position.distanceTo(walkTarget);
+    if (distance > 0.01) avatar.rotation.y = Math.atan2(walkTarget.x - avatar.position.x, walkTarget.z - avatar.position.z);
+    if (reducedMotion || distance <= delta * 5) {
+      avatar.position.copy(walkTarget);
+      route.shift();
+      if (!route.length) {
+        legs.forEach(leg => { leg.rotation.x = 0; });
+        const arrive = onArrival;
+        onArrival = undefined;
+        queueMicrotask(() => arrive?.());
+      }
+    } else {
+      avatar.position.lerp(walkTarget, delta * 5 / distance);
+      stride += delta * 13;
+      legs.forEach((leg, index) => { leg.rotation.x = Math.sin(stride) * (index ? 0.65 : -0.65); });
+    }
+    center.set(avatar.position.x, 0.5, avatar.position.z);
+    dirty = true;
+  }
   const contactGeometry = new THREE.CircleGeometry(0.55, 14);
   const contactMaterial = new THREE.MeshBasicMaterial({ color: '#334438', transparent: true, opacity: 0.24, depthWrite: false });
   let city, lastRevision = -1, lastView = '', frame, lastTime = 0, dirty = true;
@@ -138,6 +201,41 @@ export function createCityView(host, onPick, onZoom) {
   let selected;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const pointers = new Map();
+  const streetLights = Array.from({ length: 4 }, () => {
+    const light = new THREE.PointLight('#ffbd75', 0, 6.5, 2);
+    scene.add(light);
+    return light;
+  });
+  let dusk = 0;
+  let lampCenter;
+
+  function updateStreetLights() {
+    const x = Math.round(center.x / cellSize);
+    const z = Math.round(center.z / cellSize);
+    const key = city.revision + ':' + x + ',' + z;
+    const active = dusk > 0.15 && span < 90;
+    if (!active) {
+      streetLights.forEach(light => { light.intensity = 0; });
+      lampCenter = undefined;
+      return;
+    }
+    if (key !== lampCenter) {
+      const nearest = [];
+      for (let dx = -5; dx <= 5; dx++) for (let dz = -5; dz <= 5; dz++) {
+        if (city.at(x + dx, z + dz)?.type === 'lantern') {
+          nearest.push({ x: x + dx, z: z + dz, distance: dx * dx + dz * dz });
+        }
+      }
+      nearest.sort((a, b) => a.distance - b.distance);
+      streetLights.forEach((light, index) => {
+        const lantern = nearest[index];
+        light.visible = Boolean(lantern);
+        if (lantern) light.position.set(lantern.x * cellSize, 1.49, lantern.z * cellSize);
+      });
+      lampCenter = key;
+    }
+    streetLights.forEach(light => { light.intensity = dusk * 11; });
+  }
 
   function disposeChunk(group) {
     group.traverse(object => { if (object.isInstancedMesh) object.dispose(); });
@@ -160,7 +258,7 @@ export function createCityView(host, onPick, onZoom) {
     frustum.setFromProjectionMatrix(projectionView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     grid.position.x = Math.round(center.x / cellSize) * cellSize - cellSize / 2;
     grid.position.z = Math.round(center.z / cellSize) * cellSize - cellSize / 2;
-    grid.visible = span < 107;
+    grid.visible = !avatar.visible && span < 107;
     marker.scale.x = marker.scale.z = Math.max(1, span / 490);
   }
 
@@ -204,7 +302,7 @@ export function createCityView(host, onPick, onZoom) {
     }
     const group = new THREE.Group();
     for (const [shape, rows] of batches) {
-      const mesh = new THREE.InstancedMesh(geometries[shape], material, rows.length);
+      const mesh = new THREE.InstancedMesh(geometries[shape] ?? geometries.box, shape === 'glow' ? lanternMaterial : material, rows.length);
       mesh.userData.cells = rows.map(row => row.id);
       rows.forEach((row, i) => {
         transform.position.set(row.x, row.y, row.z);
@@ -337,9 +435,11 @@ export function createCityView(host, onPick, onZoom) {
     const delta = Math.min((now - (lastTime || now)) / 1000, 0.05);
     lastTime = now;
     if (!rendering || !city || !host.clientWidth) return;
+    updateWalker(delta);
     if (dirty) {
       syncCamera();
       syncChunks();
+      updateStreetLights();
     }
     const loading = loadVisible();
     const animated = traffic.some(rider => rider.node.visible) && !reducedMotion;
@@ -448,6 +548,12 @@ export function createCityView(host, onPick, onZoom) {
     zoom(span * Math.exp(event.deltaY * 0.0012));
   }, { passive: false });
   canvas.addEventListener('keydown', event => {
+    const steps = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] };
+    if (avatar.visible && steps[event.key]) {
+      event.preventDefault();
+      onStep(...steps[event.key]);
+      return;
+    }
     const movement = span / 14;
     const arrows = { ArrowUp: [-1, -1], ArrowDown: [1, 1], ArrowLeft: [-1, 1], ArrowRight: [1, -1] };
     if (arrows[event.key]) {
@@ -467,6 +573,7 @@ export function createCityView(host, onPick, onZoom) {
       for (const group of visible.values()) disposeChunk(group);
       visible.clear();
       city = value;
+      lampCenter = undefined;
       lastView = '';
       queued.length = 0;
       lastRevision = -1;
@@ -485,6 +592,51 @@ export function createCityView(host, onPick, onZoom) {
       zoom(value);
     },
     zoom,
+    startWalk(cell) {
+      avatar.visible = true;
+      avatar.rotation.y = 0;
+      avatar.position.set(cell.x * cellSize, 0.12, cell.z * cellSize);
+      drink.visible = false;
+      canvas.setAttribute('aria-label', 'City walk. Tap a destination or use the arrow keys to follow connected streets.');
+      this.centerWalker();
+    },
+    stopWalk() {
+      avatar.visible = false;
+      canvas.setAttribute('aria-label', 'City map. Use arrows to pan, plus or minus to zoom, and Enter to select or build on the center lot.');
+      route = [];
+      onArrival = undefined;
+      body.position.y = 0;
+      legs.forEach(leg => { leg.rotation.x = 0; });
+      dirty = true;
+    },
+    walk(path, arrive) {
+      body.position.y = 0;
+      route = path;
+      onArrival = arrive;
+      if (!route.length) {
+        onArrival = undefined;
+        arrive();
+      }
+      dirty = true;
+    },
+    centerWalker() {
+      center.set(avatar.position.x, 0.5, avatar.position.z);
+      zoom(22);
+    },
+    rest(sitting, bench) {
+      const angle = bench.rotation * Math.PI / 2;
+      avatar.position.set(bench.x * cellSize + Math.sin(angle) * (sitting ? 0.24 : 1.55),
+        sitting ? 0.29 : 0.12, bench.z * cellSize + Math.cos(angle) * (sitting ? 0.24 : 1.55));
+      avatar.rotation.y = angle;
+      this.centerWalker();
+      body.position.y = 0;
+      legs.forEach(leg => { leg.rotation.x = sitting ? -1.2 : 0; });
+      dirty = true;
+    },
+    holdDrink() {
+      drink.visible = true;
+      dirty = true;
+    },
     get span() { return span; },
     resume(value) {
       rendering = value;
@@ -498,6 +650,8 @@ export function createCityView(host, onPick, onZoom) {
       sun.position.set(-Math.cos(angle) * 9, 2 + Math.max(0, Math.sin(angle)) * 12, 6);
       sun.intensity = 0.19 + day * 2.16;
       fill.intensity = 0.64 + day * 0.93;
+      dusk = 1 - day;
+      lanternMaterial.emissiveIntensity = dusk * 1.7;
       dirty = true;
     },
     metrics() {
